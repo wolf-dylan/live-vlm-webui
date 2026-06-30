@@ -43,6 +43,7 @@ from .vlm_service import VLMService
 from .video_processor import VideoProcessorTrack
 from .gpu_monitor import create_monitor
 from .rtsp_track import RTSPVideoTrack
+from .detector_service import NanoOwlDetector
 
 # Configure logging
 logging.basicConfig(
@@ -64,6 +65,25 @@ default_vlm_config = {}  # Set at startup; used to create new sessions
 sessions = {}  # session_id -> {"vlm_service": VLMService}
 session_websockets = defaultdict(set)  # session_id -> set of ws
 ws_to_session = {}  # ws -> session_id
+
+# Shared open-vocabulary detector (NanoOWL). Loaded lazily on first use so the
+# server starts instantly and works even where NanoOWL isn't installed.
+detector = None  # type: ignore[var-annotated]
+
+
+def get_detector():
+    """Return the shared NanoOwlDetector, creating it on first use."""
+    global detector
+    if detector is None:
+        detector = NanoOwlDetector()
+        status = detector.get_status()
+        if status["available"]:
+            logger.info(f"NanoOWL detector ready: {status}")
+        else:
+            logger.warning(
+                f"NanoOWL detector unavailable (boxes disabled): {status.get('error')}"
+            )
+    return detector
 
 
 def get_or_create_session(session_id: str):
@@ -99,6 +119,12 @@ def get_session_callback(session_id: str):
     def callback(text: str, metrics: dict):
         out = {"type": "vlm_response", "text": text, "metrics": metrics}
         session = sessions.get(session_id)
+        # Bounding boxes now come from the dedicated NanoOWL detector, which runs
+        # concurrently with the VLM text pipeline.
+        if detector is not None:
+            detections = detector.get_current_detections()
+            if detections:
+                out["detections"] = detections
         if session and session.get("vlm_service"):
             svc = session["vlm_service"]
             if session.get("show_request_payload"):
@@ -352,6 +378,7 @@ async def websocket_handler(request):
                 "prompt": svc.prompt,
                 "process_every": _VPT.process_every_n_frames,
                 "session_id": session_id,
+                "detector": get_detector().get_status(),
             }
         )
 
@@ -379,6 +406,19 @@ async def websocket_handler(request):
                                     "max_tokens": max_tokens,
                                 }
                             )
+
+                    elif data.get("type") == "update_detection":
+                        det = get_detector()
+                        query = data.get("query", "")
+                        if "query" in data:
+                            det.set_query(query if isinstance(query, str) else "")
+                        if "threshold" in data:
+                            det.set_threshold(data.get("threshold"))
+                        if not det.enabled:
+                            det.clear()
+                        status = det.get_status()
+                        logger.info(f"[{session_id}] Detection updated: {status}")
+                        await ws.send_json({"type": "detection_updated", **status})
 
                     elif data.get("type") == "update_model":
                         new_model = data.get("model", "").strip()
@@ -613,7 +653,7 @@ async def offer(request):
             relayed_rtsp = relay.subscribe(rtsp_track)
 
             processor_track = VideoProcessorTrack(
-                relayed_rtsp, session_vlm, text_callback=session_callback
+                relayed_rtsp, session_vlm, text_callback=session_callback, detector=get_detector()
             )
 
             # Add processor directly to peer connection
@@ -636,7 +676,10 @@ async def offer(request):
             if track.kind == "video":
                 # Create processor track with this session's VLM and session-scoped callback
                 processor_track = VideoProcessorTrack(
-                    relay.subscribe(track), session_vlm, text_callback=session_callback
+                    relay.subscribe(track),
+                    session_vlm,
+                    text_callback=session_callback,
+                    detector=get_detector(),
                 )
 
                 # Add processed track back to connection
@@ -707,7 +750,7 @@ async def rtsp_start(request):
         session_vlm = session["vlm_service"]
         session_callback = get_session_callback(session_id)
         processor_track = VideoProcessorTrack(
-            rtsp_track, session_vlm, text_callback=session_callback
+            rtsp_track, session_vlm, text_callback=session_callback, detector=get_detector()
         )
 
         # Start background task to consume frames

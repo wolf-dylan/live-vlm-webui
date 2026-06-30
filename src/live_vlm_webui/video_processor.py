@@ -46,13 +46,22 @@ class VideoProcessorTrack(VideoStreamTrack):
 
     # Class variable for frame processing interval (can be updated dynamically)
     process_every_n_frames = 30
+    # Detector runs more often than the VLM for smoother object tracking
+    detect_every_n_frames = 10
     # Max allowed latency before dropping frames (in seconds, 0 = disabled)
     max_frame_latency = 0.0
 
-    def __init__(self, track: VideoStreamTrack, vlm_service: VLMService, text_callback=None):
+    def __init__(
+        self,
+        track: VideoStreamTrack,
+        vlm_service: VLMService,
+        text_callback=None,
+        detector=None,
+    ):
         super().__init__()
         self.track = track
         self.vlm_service = vlm_service
+        self.detector = detector  # Optional NanoOwlDetector for bounding boxes
         self.text_callback = text_callback  # Callback to send text updates
         self.last_frame: Optional[np.ndarray] = None
         self.frame_count = 0
@@ -135,10 +144,15 @@ class VideoProcessorTrack(VideoStreamTrack):
             # Increment frame counter
             self.frame_count += 1
 
-            # Only convert to numpy when needed (for VLM processing or first frame)
-            # This avoids expensive CPU color conversion on every frame
-            interval = self.__class__.process_every_n_frames
-            need_conversion = (self.frame_count % interval == 0) or (self.frame_count == 1)
+            # Only convert to numpy when needed (for VLM/detector processing or
+            # first frame). This avoids expensive CPU color conversion on every frame.
+            vlm_interval = self.__class__.process_every_n_frames
+            detect_interval = self.__class__.detect_every_n_frames
+            detector_active = self.detector is not None and getattr(self.detector, "enabled", False)
+
+            need_vlm = self.frame_count % vlm_interval == 0
+            need_detect = detector_active and (self.frame_count % detect_interval == 0)
+            need_conversion = need_vlm or need_detect or (self.frame_count == 1)
 
             if need_conversion:
                 t1 = time.time()
@@ -158,13 +172,19 @@ class VideoProcessorTrack(VideoStreamTrack):
                 if self.frame_count == 1:
                     logger.info(f"First frame received: {img.shape}")
 
-                # Send frame to VLM for analysis (async, non-blocking)
-                if self.frame_count % interval == 0:
-                    # Convert to PIL Image for VLM
+                # Convert to PIL once and reuse for VLM + detector (both async,
+                # fire-and-forget so they run concurrently without blocking recv).
+                if need_vlm or need_detect:
                     pil_img = Image.fromarray(cv2.cvtColor(img, cv2.COLOR_BGR2RGB))
-                    # Fire and forget - don't wait for result
-                    asyncio.create_task(self.vlm_service.process_frame(pil_img))
-                    logger.info(f"Frame {self.frame_count}: Sending to VLM (interval={interval})")
+
+                    if need_vlm:
+                        asyncio.create_task(self.vlm_service.process_frame(pil_img))
+                        logger.info(
+                            f"Frame {self.frame_count}: Sending to VLM (interval={vlm_interval})"
+                        )
+
+                    if need_detect:
+                        asyncio.create_task(self.detector.process_frame(pil_img))
 
             # Get current response (may be old if VLM is still processing)
             response, is_processing = self.vlm_service.get_current_response()

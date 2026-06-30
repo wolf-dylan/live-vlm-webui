@@ -115,11 +115,17 @@ limitations under the License.
         }
 
         .logo {
-            font-size: 28px;
-            font-weight: 700;
-            color: var(--accent-color);
-            letter-spacing: -0.5px;
+            display: flex;
+            align-items: center;
             line-height: 1;
+        }
+
+        .logo img {
+            height: 72px;
+            width: auto;
+            max-width: min(45vw, 360px);
+            object-fit: contain;
+            display: block;
         }
 
         .title-section h1 {
@@ -819,6 +825,17 @@ limitations under the License.
 
         video.mirrored {
             transform: scaleX(-1);
+        }
+
+        .detection-canvas {
+            position: absolute;
+            inset: 0;
+            pointer-events: none;
+            z-index: 9;
+        }
+
+        .detection-canvas.mirrored {
+            /* intentionally not CSS-flipped — x coords are flipped in JS so text stays readable */
         }
 
         .video-controls {
@@ -1627,16 +1644,16 @@ limitations under the License.
         }
 
         .logo .lucide,
-        .logo svg {
-            width: 42px;
-            height: 42px;
-            filter: drop-shadow(0 0 8px var(--accent-color));
+        .logo svg,
+        .logo img {
+            filter: none;
         }
 
         /* Logo color - theme-aware (subtle glow on light background) */
         body.light-theme .logo .lucide,
-        body.light-theme .logo svg {
-            filter: drop-shadow(0 0 3px rgba(94, 148, 0, 0.3));
+        body.light-theme .logo svg,
+        body.light-theme .logo img {
+            filter: none;
         }
 
         .icon-btn .lucide,
@@ -1911,6 +1928,27 @@ limitations under the License.
         }
 
         @media (max-width: 768px) {
+            .header {
+                padding: 12px 16px;
+            }
+
+            .header-left {
+                gap: 10px;
+            }
+
+            .logo img {
+                height: 48px;
+                max-width: min(50vw, 220px);
+            }
+
+            .title-section h1 {
+                font-size: 18px;
+            }
+
+            .title-section .subtitle {
+                font-size: 11px;
+            }
+
             .main-content {
                 padding: 12px;
             }
@@ -1992,22 +2030,12 @@ limitations under the License.
     <div class="header">
         <div class="header-left">
             <div class="logo">
-                <svg xmlns="http://www.w3.org/2000/svg"
-                     width="42"
-                     height="42"
-                     viewBox="0 0 1024 1024"
-                     fill="none"
-                     style="color: var(--accent-color);">
-                    <!-- All parts become accent color (NVIDIA green) -->
-                    <path fill="currentColor" d="M1024 727.183 511.134 1024 0 729.493V601.5l511.134 296L1024 601.5z"/>
-
-                    <path fill="currentColor" d="M968.916 53.23c20.567-11.874 37.244-2.248 37.244 21.5v452.571c0 23.748-16.678 52.625-37.244 64.5L568.653 822.893c-20.566 11.874-37.239 2.248-37.239-21.5V348.821c0-23.748 16.673-52.626 37.239-64.5zM592 407.121v304.172c0 18.777 13.183 26.389 29.445 17l303.11-175.001c16.262-9.389 29.445-32.222 29.445-51V198.12zm35-89.894c0-15.037-10.745-21.023-24-13.371-13.255 7.653-24 26.046-24 41.083s10.745 21.024 24 13.371c13.255-7.652 24-26.046 24-41.083M427.702 479.5v337L25 584V247zM216.603 440C168.773 412.386 130 434.772 130 490s38.773 122.386 86.603 150 86.602 5.228 86.602-50-38.773-122.386-86.602-150m146.855 44.544c-12.955-7.48-23.458-1.417-23.458 13.543s10.503 33.151 23.458 40.631 23.458 1.415 23.458-13.544c0-14.96-10.503-33.15-23.458-40.63"/>
-
-                    <path fill="currentColor" d="m455.5 464-403-233.5 38.5-21 404.5 232V778l-40 24.5zM501.5 363.5v40L128.644 191.366 166 169.799zM513.5 298c-6.5 9-9 15.5-12 25.5L198 153l31-17zM931 519.064 715 643.772v-88.949l20.784-11.999v64.948l174.431-100.708v-64.967c8.419-5.181 15.888-14.149 20.785-24.097zM895.288 276.814c15.305-8.836 27.713-1.673 27.713 16v80c0 17.673-12.408 39.164-27.713 48L654.713 559.71c-15.306 8.837-27.713 1.674-27.713-16v-80c0-17.673 12.407-39.163 27.713-48zM663.882 457.792v31.943l158.18-91.325v-31.943z"/>
-                </svg>
+                 <img src="images/WOLF-Logo-darkbackgroundR-scaled.webp"
+                     alt="WOLF Advanced Technology"
+                     onerror="this.onerror=null; this.src='images/simple-logo.svg'; this.alt='Live VLM WebUI';">
             </div>
             <div class="title-section">
-                <h1>Live VLM WebUI</h1>
+                <h1>Live VLM WebUI <span style="color: var(--accent-color); font-weight: 400; font-size: 14px; margin-left: 8px; vertical-align: middle;">+ NanoOWL</span></h1>
                 <div class="subtitle">Real-time Vision Language Model Benchmark/Evaluation Tool</div>
             </div>
         </div>
@@ -2061,6 +2089,33 @@ limitations under the License.
                                 <option value="top">At the top</option>
                                 <option value="bottom">At the bottom</option>
                             </select>
+                        </div>
+
+                        <div class="settings-item">
+                            <div>
+                                <div class="settings-item-label">Object Detection (NanoOWL)</div>
+                                <div class="settings-item-description" id="detectorStatusDesc">Draw real-time bounding boxes from the dedicated detector</div>
+                            </div>
+                            <label class="toggle-switch">
+                                <input type="checkbox" id="bboxOverlayToggle">
+                                <span class="toggle-slider"></span>
+                            </label>
+                        </div>
+
+                        <div class="settings-item" id="detectionQueryItem" style="display: none;">
+                            <div style="flex: 1; min-width: 0;">
+                                <div class="settings-item-label">Detection Query</div>
+                                <div class="settings-item-description">Comma-separated objects to detect, e.g. "a hand, a face, a cup"</div>
+                                <input type="text" id="detectionQuery" placeholder="a hand, a face" value="a hand" style="margin-top: 8px; width: 100%;">
+                            </div>
+                        </div>
+
+                        <div class="settings-item" id="detectionThresholdItem" style="display: none;">
+                            <div style="flex: 1; min-width: 0;">
+                                <div class="settings-item-label">Detection Confidence: <span id="detectionThresholdValue">0.10</span></div>
+                                <div class="settings-item-description">Lower finds more objects but adds false positives</div>
+                                <input type="range" id="detectionThreshold" min="0.02" max="0.6" step="0.01" value="0.1" style="margin-top: 8px; width: 100%;">
+                            </div>
                         </div>
                     </div>
 
@@ -2420,6 +2475,7 @@ After commands, explain: obstacles detected, clearance margins, goal inference, 
                 </div>
 
                 <video id="videoElement" autoplay playsinline muted></video>
+                <canvas id="detectionCanvas" class="detection-canvas"></canvas>
                 <div class="video-overlay" id="videoOverlay"></div>
             </div>
 
@@ -2571,6 +2627,8 @@ After commands, explain: obstacles detected, clearance margins, goal inference, 
         const processEvery = document.getElementById('processEvery');
         const maxLatency = document.getElementById('maxLatency');
         const mirrorBtn = document.getElementById('mirrorBtn');
+        const detectionCanvas = document.getElementById('detectionCanvas');
+        const detectionCtx = detectionCanvas.getContext('2d');
 
         let peerConnection = null;
         let localStream = null;
@@ -2582,8 +2640,446 @@ After commands, explain: obstacles detected, clearance margins, goal inference, 
         let isAnalysisRunning = false;
         let selectedCameraId = null;
         let rtspSessionId = 'default';  // For RTSP mode
+        let latestDetections = [];
+        let smoothedDetections = [];
+        let lastDetectionsAtMs = 0;
+        let emptyDetectionUpdates = 0;
+        const DETECTION_HOLD_MS = 1800;
+        const DETECTION_MAX_EMPTY_UPDATES = 4;
+        // Confidence is already filtered server-side by the detector threshold,
+        // so keep the client gate at 0 (NanoOWL/OWL-ViT scores are naturally low).
+        const DETECTION_MIN_CONFIDENCE = 0.0;
+        // Reject boxes that are implausibly large (cover almost the whole frame) or tiny noise.
+        const DETECTION_MAX_AREA = 0.85;
+        const DETECTION_MIN_AREA = 0.0015;
+        // Exponential moving average factor for box position smoothing (0=frozen, 1=no smoothing).
+        const DETECTION_SMOOTHING = 0.45;
+        // Minimum overlap to treat a new box as the same object as a previous box.
+        const DETECTION_IOU_MATCH = 0.2;
         // Enable markdown by default (user can disable if they prefer raw text)
         let markdownEnabled = localStorage.getItem('markdownEnabled') !== 'false';
+
+        function clamp(value, min, max) {
+            return Math.max(min, Math.min(max, value));
+        }
+
+        // Assign a consistent color to each label by hashing the label string.
+        const DETECTION_COLORS = [
+            '#22d3ee', // cyan
+            '#f59e0b', // amber
+            '#a78bfa', // violet
+            '#34d399', // emerald
+            '#f87171', // red
+            '#fb923c', // orange
+            '#60a5fa', // blue
+            '#e879f9', // fuchsia
+            '#4ade80', // green
+            '#facc15', // yellow
+        ];
+        function labelColor(label) {
+            let hash = 0;
+            const s = String(label || 'object');
+            for (let i = 0; i < s.length; i++) {
+                hash = (hash * 31 + s.charCodeAt(i)) >>> 0;
+            }
+            return DETECTION_COLORS[hash % DETECTION_COLORS.length];
+        }
+
+        function normalizeCoord(value) {
+            const n = Number(value);
+            if (!Number.isFinite(n)) {
+                return null;
+            }
+            return n;
+        }
+
+        function normalizeBox(box, item = {}) {
+            if (!box) {
+                return null;
+            }
+
+            let x = null;
+            let y = null;
+            let w = null;
+            let h = null;
+
+            if (Array.isArray(box) && box.length >= 4) {
+                const format = (item.format || item.bbox_format || '').toLowerCase();
+                if (format === 'xyxy' || format === 'x1y1x2y2') {
+                    const x1 = normalizeCoord(box[0]);
+                    const y1 = normalizeCoord(box[1]);
+                    const x2 = normalizeCoord(box[2]);
+                    const y2 = normalizeCoord(box[3]);
+                    if ([x1, y1, x2, y2].some(v => v === null)) {
+                        return null;
+                    }
+                    x = x1;
+                    y = y1;
+                    w = x2 - x1;
+                    h = y2 - y1;
+                } else {
+                    x = normalizeCoord(box[0]);
+                    y = normalizeCoord(box[1]);
+                    w = normalizeCoord(box[2]);
+                    h = normalizeCoord(box[3]);
+                }
+            } else if (typeof box === 'object') {
+                if (
+                    box.x !== undefined &&
+                    box.y !== undefined &&
+                    (box.w !== undefined || box.width !== undefined) &&
+                    (box.h !== undefined || box.height !== undefined)
+                ) {
+                    x = normalizeCoord(box.x);
+                    y = normalizeCoord(box.y);
+                    w = normalizeCoord(box.w ?? box.width);
+                    h = normalizeCoord(box.h ?? box.height);
+                } else if (
+                    box.xmin !== undefined &&
+                    box.ymin !== undefined &&
+                    box.xmax !== undefined &&
+                    box.ymax !== undefined
+                ) {
+                    const x1 = normalizeCoord(box.xmin);
+                    const y1 = normalizeCoord(box.ymin);
+                    const x2 = normalizeCoord(box.xmax);
+                    const y2 = normalizeCoord(box.ymax);
+                    if ([x1, y1, x2, y2].some(v => v === null)) {
+                        return null;
+                    }
+                    x = x1;
+                    y = y1;
+                    w = x2 - x1;
+                    h = y2 - y1;
+                } else if (
+                    box.x1 !== undefined &&
+                    box.y1 !== undefined &&
+                    box.x2 !== undefined &&
+                    box.y2 !== undefined
+                ) {
+                    const x1 = normalizeCoord(box.x1);
+                    const y1 = normalizeCoord(box.y1);
+                    const x2 = normalizeCoord(box.x2);
+                    const y2 = normalizeCoord(box.y2);
+                    if ([x1, y1, x2, y2].some(v => v === null)) {
+                        return null;
+                    }
+                    x = x1;
+                    y = y1;
+                    w = x2 - x1;
+                    h = y2 - y1;
+                } else if (
+                    box.left !== undefined &&
+                    box.top !== undefined &&
+                    box.right !== undefined &&
+                    box.bottom !== undefined
+                ) {
+                    const x1 = normalizeCoord(box.left);
+                    const y1 = normalizeCoord(box.top);
+                    const x2 = normalizeCoord(box.right);
+                    const y2 = normalizeCoord(box.bottom);
+                    if ([x1, y1, x2, y2].some(v => v === null)) {
+                        return null;
+                    }
+                    x = x1;
+                    y = y1;
+                    w = x2 - x1;
+                    h = y2 - y1;
+                }
+            }
+
+            if ([x, y, w, h].some(v => v === null)) {
+                return null;
+            }
+
+            if (w <= 0 || h <= 0) {
+                return null;
+            }
+
+            return { x, y, w, h };
+        }
+
+        function normalizeDetection(item) {
+            if (!item || typeof item !== 'object') {
+                return null;
+            }
+
+            const rawBox = item.bbox || item.box || item.rect || item.rectangle || item.bounds;
+            const bbox = normalizeBox(rawBox, item);
+            if (!bbox) {
+                return null;
+            }
+
+            const label = String(item.label || item.class || item.name || item.category || 'object');
+            const confidenceValue = Number(item.confidence ?? item.score ?? item.probability ?? item.conf);
+            const confidence = Number.isFinite(confidenceValue) ? clamp(confidenceValue, 0, 1) : null;
+
+            return { label, confidence, bbox };
+        }
+
+        function extractDetections(candidate) {
+            if (!candidate) {
+                return [];
+            }
+
+            let list = [];
+            if (Array.isArray(candidate)) {
+                list = candidate;
+            } else if (typeof candidate === 'object') {
+                if (Array.isArray(candidate.detections)) {
+                    list = candidate.detections;
+                } else if (Array.isArray(candidate.boxes)) {
+                    list = candidate.boxes;
+                } else if (Array.isArray(candidate.objects)) {
+                    list = candidate.objects;
+                } else if (Array.isArray(candidate.predictions)) {
+                    list = candidate.predictions;
+                } else if (Array.isArray(candidate.results)) {
+                    list = candidate.results;
+                } else if (candidate.bbox || candidate.box || candidate.rect) {
+                    list = [candidate];
+                }
+            }
+
+            return list.map(normalizeDetection).filter(Boolean);
+        }
+
+        // Detections come from the dedicated NanoOWL detector as a structured
+        // `detections` array on the websocket payload (no VLM text parsing).
+        function parseDetectionsFromPayload(data) {
+            if (!data || typeof data !== 'object') {
+                return [];
+            }
+            return extractDetections(data.detections);
+        }
+
+        // Reject detections that are low confidence or have implausible sizes.
+        function filterValidDetections(detections) {
+            if (!Array.isArray(detections)) {
+                return [];
+            }
+            return detections.filter((det) => {
+                if (!det || !det.bbox) return false;
+                const { w, h } = det.bbox;
+                if (!Number.isFinite(w) || !Number.isFinite(h)) return false;
+                // Confidence gate: if the model gave a confidence, require it to clear the threshold.
+                if (det.confidence !== null && det.confidence < DETECTION_MIN_CONFIDENCE) return false;
+                const area = w * h;
+                if (area > DETECTION_MAX_AREA) return false; // covers nearly the whole frame -> almost always wrong
+                if (area < DETECTION_MIN_AREA) return false; // speck of noise
+                return true;
+            });
+        }
+
+        // Intersection-over-union between two normalized boxes ({x,y,w,h}).
+        function boxIoU(a, b) {
+            const ax2 = a.x + a.w;
+            const ay2 = a.y + a.h;
+            const bx2 = b.x + b.w;
+            const by2 = b.y + b.h;
+            const interX1 = Math.max(a.x, b.x);
+            const interY1 = Math.max(a.y, b.y);
+            const interX2 = Math.min(ax2, bx2);
+            const interY2 = Math.min(ay2, by2);
+            const interW = Math.max(0, interX2 - interX1);
+            const interH = Math.max(0, interY2 - interY1);
+            const interArea = interW * interH;
+            const unionArea = a.w * a.h + b.w * b.h - interArea;
+            return unionArea > 0 ? interArea / unionArea : 0;
+        }
+
+        // Blend a new box toward its previous position so it glides instead of jumping.
+        function smoothDetections(newDetections) {
+            const result = newDetections.map((det) => {
+                let best = null;
+                let bestIoU = DETECTION_IOU_MATCH;
+                for (const prev of smoothedDetections) {
+                    if (prev.label !== det.label) continue;
+                    const iou = boxIoU(prev.bbox, det.bbox);
+                    if (iou > bestIoU) {
+                        bestIoU = iou;
+                        best = prev;
+                    }
+                }
+                if (!best) {
+                    return det;
+                }
+                const a = DETECTION_SMOOTHING;
+                return {
+                    label: det.label,
+                    confidence: det.confidence,
+                    bbox: {
+                        x: best.bbox.x + a * (det.bbox.x - best.bbox.x),
+                        y: best.bbox.y + a * (det.bbox.y - best.bbox.y),
+                        w: best.bbox.w + a * (det.bbox.w - best.bbox.w),
+                        h: best.bbox.h + a * (det.bbox.h - best.bbox.h),
+                    },
+                };
+            });
+            smoothedDetections = result;
+            return result;
+        }
+
+        function applyDetectionStability(parsedDetections) {
+            const now = Date.now();
+            const validDetections = filterValidDetections(parsedDetections);
+
+            if (validDetections.length > 0) {
+                latestDetections = smoothDetections(validDetections);
+                lastDetectionsAtMs = now;
+                emptyDetectionUpdates = 0;
+                return;
+            }
+
+            emptyDetectionUpdates += 1;
+            const detectionsAreStale = lastDetectionsAtMs > 0 && (now - lastDetectionsAtMs) > DETECTION_HOLD_MS;
+            if (detectionsAreStale && emptyDetectionUpdates >= DETECTION_MAX_EMPTY_UPDATES) {
+                latestDetections = [];
+                smoothedDetections = [];
+            }
+        }
+
+        function clearDetectionBoxes() {
+            const rect = detectionCanvas.getBoundingClientRect();
+            detectionCtx.clearRect(0, 0, rect.width, rect.height);
+        }
+
+        function drawDetectionBoxes(detections) {
+            const rect = videoElement.getBoundingClientRect();
+            if (!rect.width || !rect.height) {
+                return;
+            }
+
+            const dpr = window.devicePixelRatio || 1;
+            const pixelWidth = Math.round(rect.width * dpr);
+            const pixelHeight = Math.round(rect.height * dpr);
+            if (detectionCanvas.width !== pixelWidth || detectionCanvas.height !== pixelHeight) {
+                detectionCanvas.width = pixelWidth;
+                detectionCanvas.height = pixelHeight;
+                detectionCanvas.style.width = `${rect.width}px`;
+                detectionCanvas.style.height = `${rect.height}px`;
+                detectionCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
+            }
+
+            detectionCtx.clearRect(0, 0, rect.width, rect.height);
+
+            if (!settings.bboxOverlay) {
+                return;
+            }
+
+            if (!Array.isArray(detections) || detections.length === 0) {
+                return;
+            }
+
+            const sourceWidth = videoElement.videoWidth || rect.width;
+            const sourceHeight = videoElement.videoHeight || rect.height;
+            const scale = Math.min(rect.width / sourceWidth, rect.height / sourceHeight);
+            const renderedWidth = sourceWidth * scale;
+            const renderedHeight = sourceHeight * scale;
+            const offsetX = (rect.width - renderedWidth) / 2;
+            const offsetY = (rect.height - renderedHeight) / 2;
+
+            // Convert numbers that may be normalized (0..1), percentages (0..100), or absolute pixels.
+            const toNormalizedX = (value) => {
+                if (!Number.isFinite(value)) return null;
+                if (value >= 0 && value <= 1) return value;
+                if (value > 1 && value <= 100) return value / 100;
+                return sourceWidth > 0 ? value / sourceWidth : null;
+            };
+            const toNormalizedY = (value) => {
+                if (!Number.isFinite(value)) return null;
+                if (value >= 0 && value <= 1) return value;
+                if (value > 1 && value <= 100) return value / 100;
+                return sourceHeight > 0 ? value / sourceHeight : null;
+            };
+
+            const lineWidth = Math.max(2, Math.round(Math.min(rect.width, rect.height) * 0.003));
+            detectionCtx.lineJoin = 'round';
+            detectionCtx.font = '600 13px "Segoe UI", sans-serif';
+
+            detections.forEach((det) => {
+                const rawX = Number(det.bbox?.x);
+                const rawY = Number(det.bbox?.y);
+                const rawW = Number(det.bbox?.w);
+                const rawH = Number(det.bbox?.h);
+
+                let x = toNormalizedX(rawX);
+                let y = toNormalizedY(rawY);
+                let w = toNormalizedX(rawW);
+                let h = toNormalizedY(rawH);
+
+                if ([x, y, w, h].some(v => !Number.isFinite(v))) {
+                    return;
+                }
+
+                x = clamp(x, 0, 1);
+                y = clamp(y, 0, 1);
+                w = clamp(w, 0, 1 - x);
+                h = clamp(h, 0, 1 - y);
+
+                if (w <= 0 || h <= 0) {
+                    return;
+                }
+
+                // Flip x coordinate when video is mirrored so boxes track correctly
+                // and text is drawn unmirrored
+                if (videoElement.classList.contains('mirrored')) {
+                    x = 1 - x - w;
+                }
+
+                const boxX = offsetX + x * renderedWidth;
+                const boxY = offsetY + y * renderedHeight;
+                const boxW = w * renderedWidth;
+                const boxH = h * renderedHeight;
+
+                const color = labelColor(det.label);
+                detectionCtx.strokeStyle = color;
+                detectionCtx.lineWidth = lineWidth;
+                detectionCtx.strokeRect(boxX, boxY, boxW, boxH);
+
+                const confidenceText = det.confidence !== null ? ` ${Math.round(det.confidence * 100)}%` : '';
+                const labelText = `${det.label}${confidenceText}`;
+                const textMetrics = detectionCtx.measureText(labelText);
+                const textWidth = textMetrics.width + 12;
+                const textHeight = 22;
+                const labelX = clamp(boxX, 0, rect.width - textWidth);
+                const labelY = boxY > textHeight + 2 ? boxY - textHeight - 2 : boxY + 2;
+
+                detectionCtx.fillStyle = 'rgba(2, 6, 23, 0.85)';
+                detectionCtx.fillRect(labelX, labelY, textWidth, textHeight);
+                detectionCtx.strokeStyle = color;
+                detectionCtx.lineWidth = 1;
+                detectionCtx.strokeRect(labelX, labelY, textWidth, textHeight);
+
+                detectionCtx.fillStyle = '#ffffff';
+                detectionCtx.fillText(labelText, labelX + 6, labelY + 15);
+            });
+        }
+
+        function resizeDetectionCanvas() {
+            const rect = videoElement.getBoundingClientRect();
+            if (!rect.width || !rect.height) {
+                return;
+            }
+
+            const dpr = window.devicePixelRatio || 1;
+            const pixelWidth = Math.round(rect.width * dpr);
+            const pixelHeight = Math.round(rect.height * dpr);
+
+            if (detectionCanvas.width !== pixelWidth || detectionCanvas.height !== pixelHeight) {
+                detectionCanvas.width = pixelWidth;
+                detectionCanvas.height = pixelHeight;
+                detectionCanvas.style.width = `${rect.width}px`;
+                detectionCanvas.style.height = `${rect.height}px`;
+            }
+
+            detectionCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
+            drawDetectionBoxes(latestDetections);
+        }
+
+        window.addEventListener('resize', resizeDetectionCanvas);
+        videoElement.addEventListener('loadedmetadata', resizeDetectionCanvas);
+        videoElement.addEventListener('playing', resizeDetectionCanvas);
 
         // Enumerate and list available cameras
         async function enumerateCameras() {
@@ -3068,6 +3564,13 @@ After commands, explain: obstacles detected, clearance margins, goal inference, 
         const popInToggle = document.getElementById('popInToggle');
         const glowToggle = document.getElementById('glowToggle');
         const fadeToggle = document.getElementById('fadeToggle');
+        const bboxOverlayToggle = document.getElementById('bboxOverlayToggle');
+        const detectionQueryInput = document.getElementById('detectionQuery');
+        const detectionThresholdInput = document.getElementById('detectionThreshold');
+        const detectionThresholdValue = document.getElementById('detectionThresholdValue');
+        const detectionQueryItem = document.getElementById('detectionQueryItem');
+        const detectionThresholdItem = document.getElementById('detectionThresholdItem');
+        const detectorStatusDesc = document.getElementById('detectorStatusDesc');
         const overlayPosition = document.getElementById('overlayPosition');
         const layoutOrder = document.getElementById('layoutOrder');
         const videoOverlay = document.getElementById('videoOverlay');
@@ -3078,15 +3581,27 @@ After commands, explain: obstacles detected, clearance margins, goal inference, 
             popIn: localStorage.getItem('popIn') !== 'false',
             glow: localStorage.getItem('glow') !== 'false',
             fade: localStorage.getItem('fade') !== 'false',
+            bboxOverlay: localStorage.getItem('bboxOverlay') === 'true',
+            detectionQuery: localStorage.getItem('detectionQuery') || 'a hand',
+            detectionThreshold: parseFloat(localStorage.getItem('detectionThreshold')) || 0.1,
             overlayPosition: localStorage.getItem('overlayPosition') || 'none',
             layoutOrder: localStorage.getItem('layoutOrder') || 'vlm-first',
             gpuUpdateInterval: parseFloat(localStorage.getItem('gpuUpdateInterval')) || 0.25
         };
 
+        // Detector availability reported by the server (set via server_config)
+        let detectorAvailable = false;
+
         // Load saved settings
         popInToggle.checked = settings.popIn;
         glowToggle.checked = settings.glow;
         fadeToggle.checked = settings.fade;
+        bboxOverlayToggle.checked = settings.bboxOverlay;
+        detectionQueryInput.value = settings.detectionQuery;
+        detectionThresholdInput.value = settings.detectionThreshold;
+        detectionThresholdValue.textContent = Number(settings.detectionThreshold).toFixed(2);
+        detectionQueryItem.style.display = settings.bboxOverlay ? '' : 'none';
+        detectionThresholdItem.style.display = settings.bboxOverlay ? '' : 'none';
         overlayPosition.value = settings.overlayPosition;
         layoutOrder.value = settings.layoutOrder;
         gpuUpdateInterval.value = settings.gpuUpdateInterval;
@@ -3156,6 +3671,70 @@ After commands, explain: obstacles detected, clearance margins, goal inference, 
             localStorage.setItem('fade', settings.fade);
         });
 
+        // Send the current detection query + threshold to the NanoOWL detector.
+        // An empty query (or disabled overlay) tells the server to stop detecting.
+        function sendDetectionSettings() {
+            if (!websocket || websocket.readyState !== WebSocket.OPEN) {
+                return;
+            }
+            const query = settings.bboxOverlay ? (settings.detectionQuery || '') : '';
+            websocket.send(JSON.stringify({
+                type: 'update_detection',
+                query: query,
+                threshold: settings.detectionThreshold
+            }));
+        }
+
+        // Reflect the server-reported detector status in the UI.
+        function applyDetectorStatus(status) {
+            if (!status || typeof status !== 'object') {
+                return;
+            }
+            detectorAvailable = !!status.available;
+            if (!detectorAvailable) {
+                bboxOverlayToggle.disabled = true;
+                const reason = status.error
+                    ? 'NanoOWL not installed on the server (boxes disabled).'
+                    : 'Object detector unavailable on this server.';
+                detectorStatusDesc.textContent = reason;
+                detectionQueryItem.style.display = 'none';
+                detectionThresholdItem.style.display = 'none';
+                clearDetectionBoxes();
+            } else {
+                bboxOverlayToggle.disabled = false;
+                detectorStatusDesc.textContent = status.engine
+                    ? 'Real-time TensorRT detector (NanoOWL).'
+                    : 'Dedicated detector (NanoOWL, PyTorch fallback \u2014 slower).';
+            }
+        }
+
+        bboxOverlayToggle.addEventListener('change', (e) => {
+            settings.bboxOverlay = e.target.checked;
+            localStorage.setItem('bboxOverlay', settings.bboxOverlay);
+            detectionQueryItem.style.display = settings.bboxOverlay ? '' : 'none';
+            detectionThresholdItem.style.display = settings.bboxOverlay ? '' : 'none';
+            sendDetectionSettings();
+            if (!settings.bboxOverlay) {
+                clearDetectionBoxes();
+            }
+        });
+
+        detectionQueryInput.addEventListener('change', (e) => {
+            settings.detectionQuery = e.target.value.trim();
+            localStorage.setItem('detectionQuery', settings.detectionQuery);
+            sendDetectionSettings();
+        });
+
+        detectionThresholdInput.addEventListener('input', (e) => {
+            settings.detectionThreshold = parseFloat(e.target.value);
+            detectionThresholdValue.textContent = settings.detectionThreshold.toFixed(2);
+        });
+        detectionThresholdInput.addEventListener('change', (e) => {
+            settings.detectionThreshold = parseFloat(e.target.value);
+            localStorage.setItem('detectionThreshold', settings.detectionThreshold);
+            sendDetectionSettings();
+        });
+
         colorfulFocusToggle.addEventListener('change', (e) => {
             const enabled = e.target.checked;
             localStorage.setItem('colorfulFocus', enabled);
@@ -3218,6 +3797,7 @@ After commands, explain: obstacles detected, clearance margins, goal inference, 
             } else {
                 fullscreenIcon.setAttribute('data-lucide', 'maximize');
             }
+            setTimeout(resizeDetectionCanvas, 60);
             lucide.createIcons();
         }
 
@@ -3621,7 +4201,9 @@ After commands, explain: obstacles detected, clearance margins, goal inference, 
         // Mirror video toggle
         mirrorBtn.addEventListener('click', () => {
             videoElement.classList.toggle('mirrored');
+            detectionCanvas.classList.toggle('mirrored');
             mirrorBtn.classList.toggle('active');
+            drawDetectionBoxes(latestDetections);
         });
 
         // Auto-apply processing interval on change
@@ -4053,6 +4635,10 @@ After commands, explain: obstacles detected, clearance margins, goal inference, 
                     updateResultText(data.text);
                     lastText = data.text;
 
+                    const parsedDetections = parseDetectionsFromPayload(data);
+                    applyDetectionStability(parsedDetections);
+                    drawDetectionBoxes(latestDetections);
+
                     // Update video overlay (always, visibility is controlled by CSS)
                     videoOverlay.textContent = data.text;
 
@@ -4123,6 +4709,13 @@ After commands, explain: obstacles detected, clearance margins, goal inference, 
                             show_response_payload: !!resCb?.checked
                         }));
                     }
+                    if (data.detector) {
+                        applyDetectorStatus(data.detector);
+                    }
+                    // Push current detection settings so the detector is ready
+                    sendDetectionSettings();
+                } else if (data.type === 'detection_updated') {
+                    applyDetectorStatus(data);
                 } else if (data.type === 'model_updated') {
                     // Model was updated on server
                     if (data.model) {
@@ -4180,6 +4773,9 @@ After commands, explain: obstacles detected, clearance margins, goal inference, 
                     connectWebSocket();
                 }
 
+                // Ensure server always receives current prompt/settings before streaming.
+                applyPromptSettings();
+
                 updateStatus('Requesting camera...', 'processing');
 
                 // Use selected camera or default
@@ -4209,14 +4805,10 @@ After commands, explain: obstacles detected, clearance margins, goal inference, 
                 });
 
                 peerConnection.ontrack = (event) => {
-                    console.log('Received remote track');
-                    if (event.track.kind === 'video') {
-                        videoElement.srcObject = event.streams[0];
-                        // Explicitly play to ensure continuous frame flow
-                        videoElement.play().catch(err => {
-                            console.error('Error playing video:', err);
-                        });
-                    }
+                    // Server does zero-copy passthrough — no overlays are baked into the
+                    // return stream. Keep showing the local camera feed (localStream) to
+                    // avoid the quality drop from the double encode→decode→re-encode cycle.
+                    console.log('Received remote track (ignored — keeping local stream for quality)');
                 };
 
                 peerConnection.oniceconnectionstatechange = () => {
@@ -4268,6 +4860,9 @@ After commands, explain: obstacles detected, clearance margins, goal inference, 
                 if (!websocket || websocket.readyState !== WebSocket.OPEN) {
                     connectWebSocket();
                 }
+
+                // Ensure server always receives current prompt/settings before streaming.
+                applyPromptSettings();
 
                 const rtspUrl = document.getElementById('rtspUrl').value.trim();
 
@@ -4404,6 +4999,11 @@ After commands, explain: obstacles detected, clearance margins, goal inference, 
             }
 
             videoElement.srcObject = null;
+            latestDetections = [];
+            smoothedDetections = [];
+            lastDetectionsAtMs = 0;
+            emptyDetectionUpdates = 0;
+            clearDetectionBoxes();
 
             isAnalysisRunning = false;
             updateStatus('Connected', 'connected');

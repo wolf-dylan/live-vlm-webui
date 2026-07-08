@@ -159,9 +159,19 @@ class RTSPVideoTrack(VideoStreamTrack):
             raise
         except Exception as e:
             logger.error(f"Error receiving RTSP frame: {e}", exc_info=True)
-            # Try to reconnect on error
+            # Try to reconnect on error and recover the stream instead of
+            # killing the track. A transient decode error should not end an
+            # otherwise healthy RTSP session.
             if not self._stopped:
-                await self._reconnect()
+                try:
+                    await self._reconnect()
+                    loop = asyncio.get_event_loop()
+                    frame = await loop.run_in_executor(None, self._read_frame)
+                    if frame is not None:
+                        self._frame_count += 1
+                        return frame
+                except Exception as reconnect_error:
+                    logger.error(f"RTSP reconnection failed: {reconnect_error}")
             raise
 
     def _read_frame(self) -> Optional[VideoFrame]:

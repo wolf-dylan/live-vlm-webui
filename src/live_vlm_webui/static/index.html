@@ -128,6 +128,20 @@ limitations under the License.
             display: block;
         }
 
+        /* NVIDIA logo sits next to the WOLF logo in the header */
+        .nvidia-logo {
+            display: flex;
+            align-items: center;
+            line-height: 1;
+        }
+
+        .nvidia-logo img {
+            height: 58px;
+            width: auto;
+            object-fit: contain;
+            display: block;
+        }
+
         .title-section h1 {
             font-size: 20px;
             font-weight: 600;
@@ -2034,6 +2048,11 @@ limitations under the License.
                      alt="WOLF Advanced Technology"
                      onerror="this.onerror=null; this.src='images/simple-logo.svg'; this.alt='Live VLM WebUI';">
             </div>
+            <div class="nvidia-logo">
+                 <img src="images/nvidia-logo.png"
+                     alt="NVIDIA"
+                     onerror="this.closest('.nvidia-logo').style.display='none';">
+            </div>
             <div class="title-section">
                 <h1>Live VLM WebUI <span style="color: var(--accent-color); font-weight: 400; font-size: 14px; margin-left: 8px; vertical-align: middle;">+ NanoOWL</span></h1>
                 <div class="subtitle">Real-time Vision Language Model Benchmark/Evaluation Tool</div>
@@ -2398,17 +2417,19 @@ limitations under the License.
                         <label>Quick Presets</label>
                         <select id="promptPreset">
                             <option value="">-- Select a preset --</option>
+                            <option value="Count the number of people currently visible and describe their engagement (looking at the booth, walking by, talking). Start your answer with the count.">Trade Show</option>
                             <option value="Describe what you see in this image in one sentence.">Scene Description</option>
                             <option value="List all objects you can see in this image, separated by commas.">Object Detection</option>
                             <option value="Describe the person's activity and what they are doing.">Activity Recognition</option>
                             <option value="Are there any safety hazards visible? Answer with 'ALERT: description' or 'SAFE'.">Safety Monitoring</option>
+                            <option value="Assess whether any person visible appears genuinely aggressive or threatening. Only signs of real aggression count. Do NOT treat neutral or friendly gestures as threats — raising hands up, waving, open palms, stretching, pointing, holding a phone, or a relaxed posture are NOT threatening. Respond with 'THREAT: description' only if there are clear signs of aggression, otherwise respond with 'CLEAR'.">Threat Detection</option>
                             <option value="Describe the facial expressions and emotions of people visible.">Emotion Detection</option>
                             <option value="Provide a detailed description of the scene for a visually impaired person.">Accessibility</option>
                             <option value="Read and transcribe any text visible in the image.">OCR / Text Reading</option>
                             <option value="Answer with Yes or No only: Is there a person visible?">Yes/No Question</option>
                             <option value="You are a robot. Describe what you see, then give 5 navigation commands to get to a possible location of a bathroom. Format: 'linear_x=0.3, angular_z=0.0 # reason'. Keep linear_x between -0.5 and 0.5, angular_z between -1.0 and 1.0.">🤖 Robot Navigation (Simple)</option>
                             <option value="You are controlling a mobile robot with differential drive. Camera: 1.0m height, forward-facing. Generate ROS cmd_vel commands based on what you see to get to a possible location of a bathroom.
-
+                            
 CRITICAL CONSTRAINTS:
 - linear.x: MUST be between -0.5 and +0.5 m/s (violations will cause robot damage)
 - angular.z: MUST be between -1.0 and +1.0 rad/s
@@ -3692,6 +3713,12 @@ After commands, explain: obstacles detected, clearance margins, goal inference, 
             }
             detectorAvailable = !!status.available;
             if (!detectorAvailable) {
+                // Detector is unavailable: force the overlay OFF so a previously
+                // saved "on" state can't leave the checkbox stuck/checked while
+                // disabled. Clear the persisted preference too.
+                settings.bboxOverlay = false;
+                localStorage.setItem('bboxOverlay', 'false');
+                bboxOverlayToggle.checked = false;
                 bboxOverlayToggle.disabled = true;
                 const reason = status.error
                     ? 'NanoOWL not installed on the server (boxes disabled).'
@@ -3702,6 +3729,14 @@ After commands, explain: obstacles detected, clearance margins, goal inference, 
                 clearDetectionBoxes();
             } else {
                 bboxOverlayToggle.disabled = false;
+                // Re-sync the checkbox and its dependent items to the saved
+                // preference. Without this, if the query/threshold items were
+                // hidden earlier (e.g. an initial "unavailable" status while the
+                // detector lazy-loads), the user had to toggle the checkbox
+                // off/on to reveal them again.
+                bboxOverlayToggle.checked = settings.bboxOverlay;
+                detectionQueryItem.style.display = settings.bboxOverlay ? '' : 'none';
+                detectionThresholdItem.style.display = settings.bboxOverlay ? '' : 'none';
                 detectorStatusDesc.textContent = status.engine
                     ? 'Real-time TensorRT detector (NanoOWL).'
                     : 'Dedicated detector (NanoOWL, PyTorch fallback \u2014 slower).';

@@ -211,6 +211,33 @@ if [ "$PORT_IN_USE" = true ]; then
     exit 1
 fi
 
+# ------------------------------------------------------------------ NanoOWL
+# Verify the optional NanoOWL object detector and make it use the GPU.
+# NanoOWL is optional, so a failure here only prints a warning (never blocks
+# the server). Default the detector to CUDA so it runs on the discrete GPU
+# (e.g. RTX 5080) instead of falling back to a slow CPU path.
+export NANOOWL_DEVICE="${NANOOWL_DEVICE:-cuda}"
+
+echo "Checking NanoOWL object detector..."
+NANOOWL_CHECK="$("$PYTHON" "$SCRIPT_DIR/check_nanoowl.py" 2>&1)"
+
+case "$NANOOWL_CHECK" in
+  "OK GPU "*)
+    echo "✅ NanoOWL ready on GPU: ${NANOOWL_CHECK#OK GPU } (NANOOWL_DEVICE=$NANOOWL_DEVICE)"
+    ;;
+  "OK CPU")
+    echo "⚠️  NanoOWL loaded but no CUDA GPU detected — detection will be slow."
+    echo "    Make sure you are using the venv with a CUDA build of torch."
+    export NANOOWL_DEVICE="cpu"
+    ;;
+  *)
+    echo "⚠️  NanoOWL not available (object detection disabled): ${NANOOWL_CHECK#MISSING }"
+    echo "    To enable it, use the venv that has nanoowl + a CUDA torch build,"
+    echo "    e.g.: pip install -e ../nanoowl  (and torch/torchvision/transformers)"
+    ;;
+esac
+echo ""
+
 # Start server with HTTPS
 echo "Starting Live VLM WebUI server..."
 echo "Auto-detecting local VLM services (Ollama, vLLM, SGLang)..."

@@ -238,7 +238,12 @@ async def detect_local_service_and_model():
 
 async def index(request):
     """Serve the main HTML page"""
-    content = open(os.path.join(os.path.dirname(__file__), "static", "index.html"), "r").read()
+    with open(
+        os.path.join(os.path.dirname(__file__), "static", "index.html"),
+        "r",
+        encoding="utf-8",
+    ) as f:
+        content = f.read()
     return web.Response(content_type="text/html", text=content)
 
 

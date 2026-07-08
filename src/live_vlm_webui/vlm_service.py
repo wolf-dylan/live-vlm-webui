@@ -163,7 +163,10 @@ class VLMService:
             self.total_inferences += 1
             self.total_inference_time += inference_time
 
-            result = response.choices[0].message.content.strip()
+            # ``content`` can be None when the model returns no text (e.g. a
+            # tool call or a length-limited/empty completion); guard against it
+            # so we don't raise AttributeError and surface a confusing error.
+            result = (response.choices[0].message.content or "").strip()
             logger.info(f"VLM response: {result} (latency: {inference_time*1000:.0f}ms)")
             return result
 

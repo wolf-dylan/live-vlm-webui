@@ -114,6 +114,9 @@ jobs:
 
     - name: Comment performance results
       if: github.event_name == 'pull_request'
+      # Forks and repositories with read-only GITHUB_TOKEN permissions cannot
+      # post PR comments. Reporting must not turn informational benchmarks red.
+      continue-on-error: true
       uses: actions/github-script@v6
       with:
         script: |

@@ -69,6 +69,7 @@ ws_to_session = {}  # ws -> session_id
 # Shared open-vocabulary detector (NanoOWL). Loaded lazily on first use so the
 # server starts instantly and works even where NanoOWL isn't installed.
 detector = None  # type: ignore[var-annotated]
+detector_init_lock = asyncio.Lock()
 
 
 def get_detector():
@@ -78,12 +79,22 @@ def get_detector():
         detector = NanoOwlDetector()
         status = detector.get_status()
         if status["available"]:
-            logger.info(f"NanoOWL detector ready: {status}")
+            logger.info(f"NanoOWL detector configured (lazy initialization): {status}")
         else:
-            logger.warning(
-                f"NanoOWL detector unavailable (boxes disabled): {status.get('error')}"
-            )
+            logger.warning(f"NanoOWL detector unavailable (boxes disabled): {status.get('error')}")
     return detector
+
+
+async def get_detector_async():
+    """Initialize the detector off the event loop and return it."""
+    if detector is not None:
+        return detector
+    async with detector_init_lock:
+        if detector is None:
+            # Importing Torch and loading OWL-ViT can take several seconds on
+            # Jetson; never block aiohttp/WebRTC while that happens.
+            return await asyncio.to_thread(get_detector)
+        return detector
 
 
 def get_or_create_session(session_id: str):
@@ -191,6 +202,27 @@ def find_available_port(start_port=8080, max_attempts=10):
         if is_port_available(port):
             return port
     return None
+
+
+def resolve_server_port(port: int, auto_port: bool = False, host: str = "0.0.0.0") -> int:
+    """Resolve the listening port before expensive service initialization.
+
+    A fixed port fails fast with a useful error.  ``--auto-port`` searches the
+    next ten ports, beginning with the requested port, so it also works when a
+    caller supplies a non-default ``--port``.
+    """
+    if is_port_available(port, host):
+        return port
+
+    if auto_port:
+        available_port = find_available_port(port + 1, max_attempts=10)
+        if available_port is not None:
+            logger.warning(f"Port {port} is in use; using port {available_port} instead")
+            return available_port
+        raise RuntimeError(f"No available port found in range {port + 1}-{port + 10}")
+
+    process = find_process_using_port(port)
+    raise RuntimeError(f"Port {port} is already in use by {process}")
 
 
 async def detect_local_service_and_model():
@@ -383,7 +415,7 @@ async def websocket_handler(request):
                 "prompt": svc.prompt,
                 "process_every": _VPT.process_every_n_frames,
                 "session_id": session_id,
-                "detector": get_detector().get_status(),
+                "detector": (await get_detector_async()).get_status(),
             }
         )
 
@@ -413,10 +445,12 @@ async def websocket_handler(request):
                             )
 
                     elif data.get("type") == "update_detection":
-                        det = get_detector()
+                        det = await get_detector_async()
                         query = data.get("query", "")
                         if "query" in data:
-                            det.set_query(query if isinstance(query, str) else "")
+                            await asyncio.to_thread(
+                                det.set_query, query if isinstance(query, str) else ""
+                            )
                         if "threshold" in data:
                             det.set_threshold(data.get("threshold"))
                         if not det.enabled:
@@ -609,6 +643,7 @@ async def offer(request):
     session = get_or_create_session(session_id)
     session_vlm = session["vlm_service"]
     session_callback = get_session_callback(session_id)
+    session_detector = await get_detector_async()
 
     # Create RTCPeerConnection with STUN servers for Docker/NAT compatibility
     config = RTCConfiguration(
@@ -658,7 +693,10 @@ async def offer(request):
             relayed_rtsp = relay.subscribe(rtsp_track)
 
             processor_track = VideoProcessorTrack(
-                relayed_rtsp, session_vlm, text_callback=session_callback, detector=get_detector()
+                relayed_rtsp,
+                session_vlm,
+                text_callback=session_callback,
+                detector=session_detector,
             )
 
             # Add processor directly to peer connection
@@ -684,7 +722,7 @@ async def offer(request):
                     relay.subscribe(track),
                     session_vlm,
                     text_callback=session_callback,
-                    detector=get_detector(),
+                    detector=session_detector,
                 )
 
                 # Add processed track back to connection
@@ -755,7 +793,10 @@ async def rtsp_start(request):
         session_vlm = session["vlm_service"]
         session_callback = get_session_callback(session_id)
         processor_track = VideoProcessorTrack(
-            rtsp_track, session_vlm, text_callback=session_callback, detector=get_detector()
+            rtsp_track,
+            session_vlm,
+            text_callback=session_callback,
+            detector=await get_detector_async(),
         )
 
         # Start background task to consume frames
@@ -1137,6 +1178,16 @@ def main():
 
     args = parser.parse_args()
 
+    if args.process_every < 1:
+        parser.error("--process-every must be at least 1")
+
+    # Resolve the port before probing VLM services or loading GPU components.
+    # This is shared by the console entry point and scripts/start_server.sh.
+    try:
+        args.port = resolve_server_port(args.port, args.auto_port, args.host)
+    except RuntimeError as exc:
+        parser.error(str(exc))
+
     # Cloud deployment: env overrides for default API base, model, and frame interval
     if os.environ.get("LIVE_VLM_API_BASE"):
         if not args.api_base:
@@ -1149,9 +1200,11 @@ def main():
     if os.environ.get("LIVE_VLM_PROCESS_EVERY"):
         try:
             args.process_every = int(os.environ.get("LIVE_VLM_PROCESS_EVERY"))
+            if args.process_every < 1:
+                raise ValueError
             logger.info(f"Using process_every from env: {args.process_every}")
         except ValueError:
-            pass
+            parser.error("LIVE_VLM_PROCESS_EVERY must be an integer of at least 1")
 
     # Set default SSL cert paths to config directory if not specified
     if args.ssl_cert is None:

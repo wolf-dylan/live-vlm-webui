@@ -12,19 +12,19 @@ The easiest way to launch the stack is using the auto-detection script:
 
 ```bash
 # Auto-detect platform, use Ollama
-./start_docker_compose.sh
+./scripts/start_docker_compose.sh
 
 # Explicit backend selection
-./start_docker_compose.sh ollama
-./start_docker_compose.sh nim
+./scripts/start_docker_compose.sh --backend ollama
+./scripts/start_docker_compose.sh --backend nim
 
 # With model specification (Ollama)
-./start_docker_compose.sh ollama llama3.2-vision:11b
+./scripts/start_docker_compose.sh --backend ollama --model llama3.2-vision:11b
 
 # With NIM model variant
 export NIM_IMAGE=nvcr.io/nim/nvidia/llama-3.1-nemotron-nano-vl-8b-v1:1
 export NIM_MODEL_NAME=nvidia/llama-3.1-nemotron-nano-vl-8b-v1
-./start_docker_compose.sh nim
+./scripts/start_docker_compose.sh --backend nim
 ```
 
 **What the script does:**
@@ -147,12 +147,12 @@ The unified `docker-compose.yml` includes NVIDIA NIM services for production-gra
 export NGC_API_KEY=your-key-here
 
 # Launch with auto-detection
-./start_docker_compose.sh nim
+./scripts/start_docker_compose.sh --backend nim
 
 # Or with specific NIM model
 export NIM_IMAGE=nvcr.io/nim/nvidia/llama-3.1-nemotron-nano-vl-8b-v1:1
 export NIM_MODEL_NAME=nvidia/llama-3.1-nemotron-nano-vl-8b-v1
-./start_docker_compose.sh nim
+./scripts/start_docker_compose.sh --backend nim
 ```
 
 ### Manual Usage (without script)

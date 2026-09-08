@@ -11,15 +11,20 @@ Complete guide for deploying Live VLM WebUI using Docker on all supported platfo
 The easiest way to run Live VLM WebUI in Docker:
 
 ```bash
-./scripts/start_container.sh
+./scripts/start_docker_compose.sh --backend ollama
 ```
 
 **What the script does:**
 - ✅ Auto-detects your platform (PC, Jetson Orin, Jetson Thor, Mac)
-- ✅ Pulls the appropriate pre-built image from GitHub Container Registry
+- ✅ Pulls the appropriate pre-built image from GitHub Container Registry (or builds this
+  checkout when `--build` is supplied)
 - ✅ Configures GPU access automatically
 - ✅ Sets up correct runtime and permissions
 - ✅ Starts the container with optimal settings
+
+For Jetson integration work, use `./scripts/start_jetson.sh`. It enables `--build` and
+`--pull-model` automatically, so the board runs the checked-out code and is ready for inference
+when the launcher completes.
 
 **Supported platforms:**
 - x86_64 PC
@@ -167,7 +172,7 @@ docker run -d --name live-vlm-webui -p 8090:8090 --env-file .env.cloud ghcr.io/n
 ### Stop Container
 
 ```bash
-./scripts/stop_container.sh
+./scripts/stop_docker_compose.sh
 # OR manually:
 docker stop live-vlm-webui
 ```
@@ -204,7 +209,7 @@ docker rm live-vlm-webui
 docker pull ghcr.io/nvidia-ai-iot/live-vlm-webui:latest
 
 # Start new container
-./scripts/start_container.sh
+./scripts/start_docker_compose.sh --backend ollama
 ```
 
 ---

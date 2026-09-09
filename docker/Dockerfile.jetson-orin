@@ -1,7 +1,11 @@
 # Dockerfile for NVIDIA Jetson Orin (AGX Orin, Orin Nano, Orin NX)
 # Based on L4T r36.2.0 (JetPack 6.0)
 
-FROM nvcr.io/nvidia/l4t-base:r36.2.0
+# NanoOWL needs JetPack-matched PyTorch, TensorRT, torch2trt, and a generated
+# image encoder engine.  start_jetson.sh resolves the compatible image with
+# jetson-containers' `autotag nanoowl` and supplies it as this build argument.
+ARG JETSON_WEBUI_BASE_IMAGE=nvcr.io/nvidia/l4t-base:r36.2.0
+FROM ${JETSON_WEBUI_BASE_IMAGE}
 
 # Install Python and system dependencies
 RUN apt-get update && apt-get install -y \

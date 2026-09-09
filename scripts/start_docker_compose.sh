@@ -114,7 +114,7 @@ if [ "${#POSITIONAL_ARGS[@]}" -gt 0 ]; then
 fi
 
 if [ -z "$MODEL" ] && [ "$BACKEND" = "ollama" ]; then
-    MODEL="llama3.2-vision:11b"
+    MODEL="gemma3:4b"
 fi
 
 if [ "$BACKEND" = "ollama" ]; then
@@ -122,7 +122,7 @@ if [ "$BACKEND" = "ollama" ]; then
     # empty.  Without these values server auto-detection sees no models during
     # first boot and incorrectly falls back to the NVIDIA cloud endpoint.
     export LIVE_VLM_API_BASE="${LIVE_VLM_API_BASE:-http://localhost:11434/v1}"
-    export LIVE_VLM_DEFAULT_MODEL="${LIVE_VLM_DEFAULT_MODEL:-$MODEL}"
+    export LIVE_VLM_DEFAULT_MODEL="$MODEL"
 fi
 
 if [ "${LIVE_VLM_PULL_MODEL:-0}" = "1" ]; then
@@ -189,6 +189,19 @@ fi
 export COMPOSE_PROFILES="$PROFILE"
 export PYTHONUNBUFFERED=1
 
+compose_run() {
+    if [ "$COMPOSE_CMD" = "docker compose" ]; then
+        docker compose "$@"
+    else
+        docker-compose "$@"
+    fi
+}
+
+if ! compose_run -f "$COMPOSE_FILE" --profile "$PROFILE" config --quiet; then
+    echo -e "${RED}Docker Compose configuration is invalid.${NC}" >&2
+    exit 1
+fi
+
 if [ "$PLATFORM" = "jetson-orin" ] || [ "$PLATFORM" = "jetson-thor" ]; then
     export LIVE_VLM_PROCESS_EVERY="${LIVE_VLM_PROCESS_EVERY:-45}"
     export NANOOWL_DEVICE="${NANOOWL_DEVICE:-cuda}"
@@ -204,30 +217,49 @@ if [ "$BUILD_IMAGES" = true ]; then
     UP_ARGS+=( --build )
 fi
 
-echo -e "${BLUE}Starting services...${NC}"
-if [ "$COMPOSE_CMD" = "docker compose" ]; then
-    docker compose "${UP_ARGS[@]}"
-else
-    docker-compose "${UP_ARGS[@]}"
-fi
-
+# Provision Ollama and the requested model before starting the WebUI. Starting
+# both together lets the UI come up against an empty model volume and makes a
+# failed Ollama container look like a generic WebUI timeout.
 if [ "$BACKEND" = "ollama" ] && [ "$PULL_MODEL" = true ] && [ -n "$MODEL" ]; then
-    echo ""
-    echo -e "${BLUE}Waiting for Ollama to become ready...${NC}"
-    for attempt in $(seq 1 30); do
+    echo -e "${BLUE}Starting Ollama before the WebUI...${NC}"
+    compose_run -f "$COMPOSE_FILE" --profile "$PROFILE" up -d ollama
+
+    ollama_ready=false
+    for attempt in $(seq 1 90); do
         if docker exec ollama ollama list >/dev/null 2>&1; then
+            ollama_ready=true
+            break
+        fi
+        state="$(docker inspect --format '{{.State.Status}}' ollama 2>/dev/null || true)"
+        if [ "$state" = "exited" ] || [ "$state" = "dead" ]; then
             break
         fi
         sleep 2
     done
 
+    if [ "$ollama_ready" != true ]; then
+        echo -e "${RED}Ollama did not become ready; the WebUI was not started.${NC}" >&2
+        echo -e "${YELLOW}Ollama logs:${NC}" >&2
+        docker logs --tail 120 ollama >&2 || true
+        exit 1
+    fi
+
     if docker exec ollama ollama list 2>/dev/null | awk 'NR > 1 {print $1}' | grep -Fxq "$MODEL"; then
         echo -e "${GREEN}Model already present: $MODEL${NC}"
     else
-        echo -e "${BLUE}Pulling Ollama model: $MODEL${NC}"
+        echo -e "${BLUE}Pulling Ollama model before WebUI startup: $MODEL${NC}"
         docker exec ollama ollama pull "$MODEL"
     fi
+
+    if ! docker exec ollama ollama show "$MODEL" >/dev/null 2>&1; then
+        echo -e "${RED}Ollama could not verify model after pull: $MODEL${NC}" >&2
+        exit 1
+    fi
+    echo -e "${GREEN}Ollama and model are ready.${NC}"
 fi
+
+echo -e "${BLUE}Starting services...${NC}"
+compose_run "${UP_ARGS[@]}"
 
 if [ "$DETACH" = true ]; then
     echo ""
@@ -252,6 +284,17 @@ if [ "$DETACH" = true ]; then
         echo -e "${RED}Timed out waiting for the WebUI container to become ready.${NC}"
         docker logs --tail 80 live-vlm-webui >&2 || true
         exit 1
+    fi
+
+    if [ "$PLATFORM" = "jetson-orin" ]; then
+        echo -e "${BLUE}Verifying NanoOWL and CUDA inside the WebUI container...${NC}"
+        if ! docker exec live-vlm-webui python -c \
+            "import torch; from nanoowl.owl_predictor import OwlPredictor; assert torch.cuda.is_available(), 'PyTorch cannot access CUDA'"; then
+            echo -e "${RED}NanoOWL/CUDA verification failed; object detection is not ready.${NC}" >&2
+            docker logs --tail 120 live-vlm-webui >&2 || true
+            exit 1
+        fi
+        echo -e "${GREEN}NanoOWL and CUDA are ready.${NC}"
     fi
 fi
 

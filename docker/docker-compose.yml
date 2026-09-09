@@ -43,8 +43,9 @@ services:
   # Ollama Service (shared across all ollama-* profiles)
   # ============================================================================
   ollama:
-    image: ollama/ollama:latest
+    image: ${OLLAMA_IMAGE:-ollama/ollama:latest}
     container_name: ollama
+    runtime: ${OLLAMA_RUNTIME:-runc}
     profiles:
       - ollama
       - ollama-jetson-orin
@@ -53,6 +54,8 @@ services:
       - "11434:11434"
     volumes:
       - ollama-data:/root/.ollama
+    environment:
+      - JETSON_JETPACK=${JETSON_JETPACK:-}
     restart: unless-stopped
     networks:
       - vlm-network
@@ -81,7 +84,7 @@ services:
     environment:
       - PYTHONUNBUFFERED=1
       - LIVE_VLM_API_BASE=${LIVE_VLM_API_BASE:-http://localhost:11434/v1}
-      - LIVE_VLM_DEFAULT_MODEL=${LIVE_VLM_DEFAULT_MODEL:-llama3.2-vision:11b}
+      - LIVE_VLM_DEFAULT_MODEL=${LIVE_VLM_DEFAULT_MODEL:-gemma3:4b}
       - NANOOWL_DEVICE=${NANOOWL_DEVICE:-cuda}
       - OPENBLAS_NUM_THREADS=${OPENBLAS_NUM_THREADS:-1}
       - OMP_NUM_THREADS=${OMP_NUM_THREADS:-1}
@@ -105,6 +108,8 @@ services:
     build:
       context: ..
       dockerfile: docker/Dockerfile.jetson-orin
+      args:
+        JETSON_WEBUI_BASE_IMAGE: ${JETSON_WEBUI_BASE_IMAGE:-nvcr.io/nvidia/l4t-base:r36.2.0}
     container_name: live-vlm-webui
     profiles:
       - ollama-jetson-orin
@@ -115,9 +120,10 @@ services:
     environment:
       - PYTHONUNBUFFERED=1
       - LIVE_VLM_API_BASE=${LIVE_VLM_API_BASE:-http://localhost:11434/v1}
-      - LIVE_VLM_DEFAULT_MODEL=${LIVE_VLM_DEFAULT_MODEL:-llama3.2-vision:11b}
+      - LIVE_VLM_DEFAULT_MODEL=${LIVE_VLM_DEFAULT_MODEL:-gemma3:4b}
       - LIVE_VLM_PROCESS_EVERY=${LIVE_VLM_PROCESS_EVERY:-45}
       - NANOOWL_DEVICE=${NANOOWL_DEVICE:-cuda}
+      - NANOOWL_IMAGE_ENCODER_ENGINE=${NANOOWL_IMAGE_ENCODER_ENGINE:-/opt/nanoowl/data/owl_image_encoder_patch32.engine}
       - OPENBLAS_NUM_THREADS=${OPENBLAS_NUM_THREADS:-1}
       - OMP_NUM_THREADS=${OMP_NUM_THREADS:-1}
     restart: unless-stopped
@@ -144,7 +150,7 @@ services:
     environment:
       - PYTHONUNBUFFERED=1
       - LIVE_VLM_API_BASE=${LIVE_VLM_API_BASE:-http://localhost:11434/v1}
-      - LIVE_VLM_DEFAULT_MODEL=${LIVE_VLM_DEFAULT_MODEL:-llama3.2-vision:11b}
+      - LIVE_VLM_DEFAULT_MODEL=${LIVE_VLM_DEFAULT_MODEL:-gemma3:4b}
       - LIVE_VLM_PROCESS_EVERY=${LIVE_VLM_PROCESS_EVERY:-45}
       - NANOOWL_DEVICE=${NANOOWL_DEVICE:-cuda}
       - OPENBLAS_NUM_THREADS=${OPENBLAS_NUM_THREADS:-1}

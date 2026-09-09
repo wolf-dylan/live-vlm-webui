@@ -80,9 +80,30 @@ cd live-vlm-webui
 ```
 
 The launcher validates Docker/NVIDIA runtime assumptions, builds the WebUI image from the
-checked-out source, starts the matching Jetson compose profile, pulls the configured Ollama
-model, and waits for the WebUI health check. Override the model with
-`./scripts/start_jetson.sh --model <name>`.
+checked-out source, starts the correct Ollama image for the detected JetPack release, pulls
+and verifies `gemma3:4b`, and only then starts the WebUI and waits for its health check.
+Override the model with `./scripts/start_jetson.sh --model <name>`.
+
+This path is fully containerized: it does not activate a host virtual environment or run pip
+against the Jetson host. Any pip output during the image build is isolated inside Docker.
+
+On JetPack 6, do not force `DOCKER_API_VERSION=1`; the launcher clears forced client API
+values and rejects the same invalid setting in the Docker systemd service. Use Docker's normal
+API negotiation; a Docker 29 installation does not by itself require a downgrade. Docker Compose
+v2 and the registered NVIDIA runtime are required. NanoOWL also requires the JetPack-matched image selected by NVIDIA's
+`autotag` helper. Install jetson-containers once if `autotag` is not already available:
+
+```bash
+git clone https://github.com/dusty-nv/jetson-containers.git ~/jetson-containers
+bash ~/jetson-containers/install.sh
+```
+
+If telemetry is not installed, use the isolated upstream installer once:
+
+```bash
+sudo -v
+curl -LsSf https://raw.githubusercontent.com/rbonghi/jetson_stats/master/scripts/install_jtop_torun_without_sudo.sh | bash
+```
 
 **Access the WebUI:** Open **`https://localhost:8090`** in your browser
 

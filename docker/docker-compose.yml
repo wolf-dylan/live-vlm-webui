@@ -64,7 +64,7 @@ services:
               count: all
               capabilities: [gpu]
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:11434/"]
+      test: ["CMD", "ollama", "list"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -80,6 +80,11 @@ services:
     network_mode: host
     environment:
       - PYTHONUNBUFFERED=1
+      - LIVE_VLM_API_BASE=${LIVE_VLM_API_BASE:-http://localhost:11434/v1}
+      - LIVE_VLM_DEFAULT_MODEL=${LIVE_VLM_DEFAULT_MODEL:-llama3.2-vision:11b}
+      - NANOOWL_DEVICE=${NANOOWL_DEVICE:-cuda}
+      - OPENBLAS_NUM_THREADS=${OPENBLAS_NUM_THREADS:-1}
+      - OMP_NUM_THREADS=${OMP_NUM_THREADS:-1}
     restart: unless-stopped
     depends_on:
       ollama:
@@ -97,6 +102,9 @@ services:
   # ============================================================================
   live-vlm-webui-jetson-orin:
     image: ghcr.io/nvidia-ai-iot/live-vlm-webui:latest-jetson-orin
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.jetson-orin
     container_name: live-vlm-webui
     profiles:
       - ollama-jetson-orin
@@ -106,6 +114,12 @@ services:
       - /run/jtop.sock:/run/jtop.sock:ro
     environment:
       - PYTHONUNBUFFERED=1
+      - LIVE_VLM_API_BASE=${LIVE_VLM_API_BASE:-http://localhost:11434/v1}
+      - LIVE_VLM_DEFAULT_MODEL=${LIVE_VLM_DEFAULT_MODEL:-llama3.2-vision:11b}
+      - LIVE_VLM_PROCESS_EVERY=${LIVE_VLM_PROCESS_EVERY:-45}
+      - NANOOWL_DEVICE=${NANOOWL_DEVICE:-cuda}
+      - OPENBLAS_NUM_THREADS=${OPENBLAS_NUM_THREADS:-1}
+      - OMP_NUM_THREADS=${OMP_NUM_THREADS:-1}
     restart: unless-stopped
     depends_on:
       ollama:
@@ -117,6 +131,9 @@ services:
   # ============================================================================
   live-vlm-webui-jetson-thor:
     image: ghcr.io/nvidia-ai-iot/live-vlm-webui:latest-jetson-thor
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.jetson-thor
     container_name: live-vlm-webui
     profiles:
       - ollama-jetson-thor
@@ -126,6 +143,12 @@ services:
       - /run/jtop.sock:/run/jtop.sock:ro
     environment:
       - PYTHONUNBUFFERED=1
+      - LIVE_VLM_API_BASE=${LIVE_VLM_API_BASE:-http://localhost:11434/v1}
+      - LIVE_VLM_DEFAULT_MODEL=${LIVE_VLM_DEFAULT_MODEL:-llama3.2-vision:11b}
+      - LIVE_VLM_PROCESS_EVERY=${LIVE_VLM_PROCESS_EVERY:-45}
+      - NANOOWL_DEVICE=${NANOOWL_DEVICE:-cuda}
+      - OPENBLAS_NUM_THREADS=${OPENBLAS_NUM_THREADS:-1}
+      - OMP_NUM_THREADS=${OMP_NUM_THREADS:-1}
     restart: unless-stopped
     depends_on:
       ollama:
@@ -189,7 +212,7 @@ services:
       - nim
     network_mode: host  # Required for WebRTC
     command: >
-      python server.py
+      python -m live_vlm_webui.server
       --host 0.0.0.0
       --port 8090
       --ssl-cert cert.pem
@@ -199,6 +222,9 @@ services:
       --prompt "Describe what you see in this image in one sentence."
     environment:
       - PYTHONUNBUFFERED=1
+      - NANOOWL_DEVICE=${NANOOWL_DEVICE:-cuda}
+      - OPENBLAS_NUM_THREADS=${OPENBLAS_NUM_THREADS:-1}
+      - OMP_NUM_THREADS=${OMP_NUM_THREADS:-1}
     restart: unless-stopped
     depends_on:
       nim:
@@ -216,13 +242,16 @@ services:
   # ============================================================================
   live-vlm-webui-nim-jetson-orin:
     image: ghcr.io/nvidia-ai-iot/live-vlm-webui:latest-jetson-orin
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.jetson-orin
     container_name: live-vlm-webui
     profiles:
       - nim-jetson-orin
     network_mode: host
     privileged: true
     command: >
-      python server.py
+      python -m live_vlm_webui.server
       --host 0.0.0.0
       --port 8090
       --ssl-cert cert.pem
@@ -234,6 +263,10 @@ services:
       - /run/jtop.sock:/run/jtop.sock:ro
     environment:
       - PYTHONUNBUFFERED=1
+      - LIVE_VLM_PROCESS_EVERY=${LIVE_VLM_PROCESS_EVERY:-45}
+      - NANOOWL_DEVICE=${NANOOWL_DEVICE:-cuda}
+      - OPENBLAS_NUM_THREADS=${OPENBLAS_NUM_THREADS:-1}
+      - OMP_NUM_THREADS=${OMP_NUM_THREADS:-1}
     restart: unless-stopped
     depends_on:
       nim:
@@ -245,13 +278,16 @@ services:
   # ============================================================================
   live-vlm-webui-nim-jetson-thor:
     image: ghcr.io/nvidia-ai-iot/live-vlm-webui:latest-jetson-thor
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.jetson-thor
     container_name: live-vlm-webui
     profiles:
       - nim-jetson-thor
     network_mode: host
     privileged: true
     command: >
-      python server.py
+      python -m live_vlm_webui.server
       --host 0.0.0.0
       --port 8090
       --ssl-cert cert.pem
@@ -263,6 +299,10 @@ services:
       - /run/jtop.sock:/run/jtop.sock:ro
     environment:
       - PYTHONUNBUFFERED=1
+      - LIVE_VLM_PROCESS_EVERY=${LIVE_VLM_PROCESS_EVERY:-45}
+      - NANOOWL_DEVICE=${NANOOWL_DEVICE:-cuda}
+      - OPENBLAS_NUM_THREADS=${OPENBLAS_NUM_THREADS:-1}
+      - OMP_NUM_THREADS=${OMP_NUM_THREADS:-1}
     restart: unless-stopped
     depends_on:
       nim:

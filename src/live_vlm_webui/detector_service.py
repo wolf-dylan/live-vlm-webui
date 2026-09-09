@@ -26,6 +26,7 @@ still runs on non-Jetson machines.
 """
 
 import asyncio
+import importlib.util
 import logging
 import os
 import re
@@ -37,17 +38,10 @@ from PIL import Image
 
 logger = logging.getLogger(__name__)
 
-# Optional import: NanoOWL is only available on properly provisioned Jetson
-# (or CUDA) environments. Importing must never crash the server.
-try:
-    from nanoowl.owl_predictor import OwlPredictor  # type: ignore
-
-    _NANOOWL_AVAILABLE = True
-    _NANOOWL_IMPORT_ERROR: Optional[Exception] = None
-except Exception as exc:  # pragma: no cover - environment dependent
-    OwlPredictor = None  # type: ignore
-    _NANOOWL_AVAILABLE = False
-    _NANOOWL_IMPORT_ERROR = exc
+# Import NanoOWL only when the detector is actually constructed. Importing it
+# at module load also imports Torch/CUDA and used to delay even `--help`, health
+# checks, and detector-free deployments.
+OwlPredictor = None  # type: ignore
 
 
 class NanoOwlDetector:
@@ -68,29 +62,48 @@ class NanoOwlDetector:
         )
         self.threshold = self._coerce_threshold(threshold, default=0.1)
 
-        self.available = _NANOOWL_AVAILABLE
+        dependencies_present = OwlPredictor is not None or (
+            importlib.util.find_spec("nanoowl") is not None
+            and importlib.util.find_spec("torch") is not None
+        )
+        self.available = dependencies_present
         self.predictor = None
         self.load_error: Optional[str] = (
-            str(_NANOOWL_IMPORT_ERROR) if _NANOOWL_IMPORT_ERROR else None
+            None if dependencies_present else "NanoOWL and PyTorch are not installed"
         )
+        self._initialized = False
+        self._load_lock = threading.Lock()
 
         self._labels: list[str] = []
         self._text_encodings = None
-        self._encode_lock = threading.Lock()
+        # NanoOWL uses one predictor (and one CUDA context) for text encoding
+        # and image inference. Protect both operations with the same lock.
+        self._predictor_lock = threading.Lock()
         self._infer_lock = asyncio.Lock()
 
         self.current_detections: list[dict] = []
         self.is_processing = False
         self.last_inference_time = 0.0
 
-        if self.available:
-            self._load()
-
     # ------------------------------------------------------------------ setup
 
     def _load(self) -> None:
+        """Load the predictor once, including under concurrent client updates."""
+        with self._load_lock:
+            if self._initialized:
+                return
+            self._initialized = True
+            self._load_unlocked()
+
+    def _load_unlocked(self) -> None:
         """Load the OWL-ViT predictor (and TensorRT engine if available)."""
         try:
+            global OwlPredictor
+            if OwlPredictor is None:
+                from nanoowl.owl_predictor import OwlPredictor as _OwlPredictor  # type: ignore
+
+                OwlPredictor = _OwlPredictor
+
             kwargs: dict[str, Any] = {}
 
             # Pick a device: explicit override, else CUDA when present, else CPU.
@@ -126,9 +139,7 @@ class NanoOwlDetector:
                 )
 
             self.predictor = OwlPredictor(self.model_name, **kwargs)
-            logger.info(
-                f"NanoOWL detector loaded: model={self.model_name}, device={device}"
-            )
+            logger.info(f"NanoOWL detector loaded: model={self.model_name}, device={device}")
         except Exception as exc:  # pragma: no cover - environment dependent
             logger.error(f"NanoOWL: failed to load predictor: {exc}", exc_info=True)
             self.available = False
@@ -156,9 +167,11 @@ class NanoOwlDetector:
             return self._labels
 
         self._labels = labels
+        if labels and self.available and not self._initialized:
+            self._load()
         if self.predictor is not None and labels:
             try:
-                with self._encode_lock:
+                with self._predictor_lock:
                     self._text_encodings = self.predictor.encode_text(labels)
                 logger.info(f"NanoOWL: query set to {labels}")
             except Exception as exc:
@@ -208,13 +221,14 @@ class NanoOwlDetector:
             return []
 
         start = time.perf_counter()
-        output = self.predictor.predict(
-            image=image,
-            text=labels,
-            text_encodings=encodings,
-            threshold=self.threshold,
-            pad_square=False,
-        )
+        with self._predictor_lock:
+            output = self.predictor.predict(
+                image=image,
+                text=labels,
+                text_encodings=encodings,
+                threshold=self.threshold,
+                pad_square=False,
+            )
         self.last_inference_time = time.perf_counter() - start
         return self._format_output(output, image.width, image.height, labels)
 
@@ -278,11 +292,14 @@ class NanoOwlDetector:
     def get_status(self) -> dict:
         return {
             "available": self.available,
+            "initialized": self._initialized,
             "enabled": self.enabled,
             "labels": list(self._labels),
             "threshold": self.threshold,
-            "engine": bool(self.image_encoder_engine and os.path.exists(self.image_encoder_engine))
-            if self.image_encoder_engine
-            else False,
+            "engine": (
+                bool(self.image_encoder_engine and os.path.exists(self.image_encoder_engine))
+                if self.image_encoder_engine
+                else False
+            ),
             "error": self.load_error,
         }

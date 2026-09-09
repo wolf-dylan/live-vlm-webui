@@ -218,7 +218,7 @@ ERROR: Package 'live-vlm-webui' requires a different Python: 3.8.10 not in '>=3.
    ```bash
    git clone https://github.com/nvidia-ai-iot/live-vlm-webui.git
    cd live-vlm-webui
-   ./scripts/start_container.sh
+   ./scripts/start_jetson.sh
    ```
 
 **Why Python 3.10+?** The project uses modern Python features and dependencies (like `match` statements, typing improvements) that require Python 3.10 or newer.

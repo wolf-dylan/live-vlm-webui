@@ -1,6 +1,5 @@
 """Integration tests for the web server."""
 
-import pytest
 from aiohttp import web
 from aiohttp.test_utils import AioHTTPTestCase
 
@@ -13,34 +12,37 @@ class TestServerIntegration(AioHTTPTestCase):
 
     async def get_application(self):
         """Create application for testing."""
-        # Create minimal test app
-        app = web.Application()
-        return app
+        from live_vlm_webui import server
+
+        class StubDetector:
+            def get_status(self):
+                return {"available": False, "enabled": False, "error": "disabled in test"}
+
+        # Avoid loading optional Torch/NanoOWL weights merely to test the
+        # control-plane WebSocket.
+        server.detector = StubDetector()
+        server.sessions.clear()
+        return await server.create_app(test_mode=True)
 
     async def test_server_starts(self):
         """Test that server starts successfully."""
         assert self.app is not None
         assert isinstance(self.app, web.Application)
 
+    async def test_websocket_connection_returns_session_configuration(self):
+        """Exercise the real WebSocket route and initial protocol messages."""
+        ws = await self.client.ws_connect("/ws?session_id=integration-test")
+        try:
+            status = await ws.receive_json()
+            config = await ws.receive_json()
+        finally:
+            await ws.close()
 
-@pytest.mark.asyncio
-async def test_websocket_connection(mock_vlm_service):
-    """Test WebSocket connection handling."""
-    # This is a placeholder - implement based on your WebSocket logic
-    assert mock_vlm_service is not None
-
-
-@pytest.mark.asyncio
-async def test_video_stream_processing(mock_video_processor, mock_vlm_service):
-    """Test video stream processing pipeline."""
-    # Mock the entire pipeline
-    test_frame = b"fake_frame_data"
-
-    # Process frame
-    result = await mock_video_processor.process_frame(test_frame)
-
-    assert result is not None
-    assert result["status"] == "processed"
+        assert status["type"] == "status"
+        assert status["session_id"] == "integration-test"
+        assert config["type"] == "server_config"
+        assert config["session_id"] == "integration-test"
+        assert config["detector"]["available"] is False
 
 
 class TestStaticFiles(AioHTTPTestCase):

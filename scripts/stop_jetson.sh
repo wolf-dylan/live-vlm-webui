@@ -5,7 +5,5 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+exec "$SCRIPT_DIR/stop_docker_compose.sh" "$@"
 
-echo "start_container.sh is deprecated."
-echo "Routing to the compose-based launcher."
-exec "$SCRIPT_DIR/start_docker_compose.sh" "$@"

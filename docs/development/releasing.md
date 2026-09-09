@@ -205,16 +205,16 @@ Test the version selection feature:
 
 ```bash
 # List available versions
-./scripts/start_container.sh --list-versions
+docker pull ghcr.io/nvidia-ai-iot/live-vlm-webui:0.2.0
 
 # Test interactive version picker
-./scripts/start_container.sh
+./scripts/start_docker_compose.sh --backend ollama
 
 # Test specific version
-./scripts/start_container.sh --version 0.2.0
+docker run --rm ghcr.io/nvidia-ai-iot/live-vlm-webui:0.2.0 python -m live_vlm_webui.server --version
 
 # Test latest
-./scripts/start_container.sh --version latest
+docker run --rm ghcr.io/nvidia-ai-iot/live-vlm-webui:latest python -m live_vlm_webui.server --version
 ```
 
 ### 6. Verify the Release
@@ -430,7 +430,7 @@ gh workflow view "build-wheel"
 
 # Verify Docker images
 docker pull ghcr.io/nvidia-ai-iot/live-vlm-webui:0.2.0
-./scripts/start_container.sh --version 0.2.0
+docker run --rm ghcr.io/nvidia-ai-iot/live-vlm-webui:0.2.0 python -m live_vlm_webui.server --version
 
 # Build and upload to PyPI (manual)
 python -m build

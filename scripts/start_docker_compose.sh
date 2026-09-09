@@ -1,389 +1,277 @@
 #!/bin/bash
 # SPDX-FileCopyrightText: Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-# http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
 
-# ==============================================================================
-# Live VLM WebUI - Docker Compose Launcher
-# ==============================================================================
-# Automatically detects platform and launches the appropriate docker-compose
-# profile with optional backend and model selection.
-#
-# Usage:
-#   ./start_docker_compose.sh [backend] [model]
-#
-# Examples:
-#   ./start_docker_compose.sh                    # Auto-detect platform, use Ollama
-#   ./start_docker_compose.sh ollama             # Explicit Ollama
-#   ./start_docker_compose.sh ollama llama3.2-vision:11b  # Ollama + specific model
-#   ./start_docker_compose.sh vllm               # vLLM backend (future)
-#   ./start_docker_compose.sh nim                # NVIDIA NIM with Cosmos-Reason1
-# ==============================================================================
+set -euo pipefail
 
-set -e  # Exit on error
+source "$(cd "$(dirname "$0")" && pwd)/common.sh"
+project_root
 
-# Colors for output
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-BLUE='\033[0;34m'
-NC='\033[0m' # No Color
+BACKEND="ollama"
+MODEL=""
+PROFILE=""
+DETACH=true
+PULL_MODEL=false
+NON_INTERACTIVE=false
+STOP_EXISTING=true
+BUILD_IMAGES=false
+POSITIONAL_ARGS=()
 
-# ==============================================================================
-# Check Prerequisites
-# ==============================================================================
-check_docker() {
-    echo -e "${YELLOW}🔍 Checking Docker installation...${NC}"
+if [ ! -t 0 ] || [ ! -t 1 ]; then
+    NON_INTERACTIVE=true
+fi
 
-    if ! command -v docker &> /dev/null; then
-        echo -e "${RED}❌ Docker not found!${NC}"
-        echo ""
-        echo -e "${YELLOW}Docker is required to run this application.${NC}"
-        echo ""
-        echo -e "Install Docker:"
-        echo -e "  Linux:   ${BLUE}https://docs.docker.com/engine/install/${NC}"
-        echo -e "  Mac:     ${BLUE}https://docs.docker.com/desktop/install/mac-install/${NC}"
-        echo -e "  Windows: ${BLUE}https://docs.docker.com/desktop/install/windows-install/${NC}"
-        echo ""
-        exit 1
-    fi
+show_usage() {
+    cat <<'EOF'
+Usage: ./scripts/start_docker_compose.sh [options]
 
-    # Check if Docker daemon is running
-    if ! docker info &> /dev/null; then
-        echo -e "${RED}❌ Docker daemon is not running!${NC}"
-        echo ""
-        echo -e "${YELLOW}Start Docker:${NC}"
-        echo -e "  Linux:   ${GREEN}sudo systemctl start docker${NC}"
-        echo -e "  Mac/Win: ${GREEN}Open Docker Desktop${NC}"
-        echo ""
-        exit 1
-    fi
-
-    # Check if docker compose is available
-    if ! docker compose version &> /dev/null; then
-        # Try old docker-compose (with hyphen)
-        if ! command -v docker-compose &> /dev/null; then
-            echo -e "${RED}❌ Docker Compose not found!${NC}"
-            echo ""
-            echo -e "${YELLOW}Install Docker Compose:${NC}"
-            echo -e "  ${BLUE}https://docs.docker.com/compose/install/${NC}"
-            echo ""
-            echo -e "Or use: ${GREEN}sudo apt install docker-compose${NC}"
-            echo ""
-            exit 1
-        else
-            echo -e "${YELLOW}⚠️  Using legacy docker-compose (V1)${NC}"
-            echo -e "${YELLOW}   Recommend upgrading to V2: ${GREEN}sudo apt install docker-compose-plugin${NC}"
-            echo ""
-            DOCKER_COMPOSE_CMD="docker-compose"
-        fi
-    else
-        DOCKER_COMPOSE_CMD="docker compose"
-    fi
-
-    echo -e "${GREEN}✅ Docker installed: $(docker --version)${NC}"
-    echo -e "${GREEN}✅ Docker Compose: $DOCKER_COMPOSE_CMD${NC}"
-    echo ""
+Options:
+  --backend BACKEND       Backend to launch: ollama or nim (default: ollama)
+  --model MODEL           Model to pull/configure after startup
+  --profile PROFILE       Override auto-selected compose profile
+  --foreground            Run `docker compose up` in the foreground
+  --pull-model            Pull the Ollama model after startup
+  --no-pull-model         Do not pull the Ollama model after startup
+  --non-interactive       Fail instead of prompting
+  --no-stop-existing      Leave existing compose stack running
+  --build                 Build the selected WebUI image from this checkout
+  -h, --help              Show this help text
+EOF
 }
 
-check_docker
-
-# Parse arguments
-BACKEND="${1:-ollama}"  # Default to ollama
-MODEL="${2:-}"          # Optional model (for Ollama) or NIM model variant
-
-# ==============================================================================
-# Platform Detection (same logic as start_container.sh)
-# ==============================================================================
-detect_platform() {
-    local arch=$(uname -m)
-
-    if [ "$arch" = "x86_64" ]; then
-        echo "x86"
-        return
-    fi
-
-    if [ "$arch" = "aarch64" ]; then
-        # Check if it's a Jetson device
-        if [ -f /etc/nv_tegra_release ]; then
-            local jetson_info=$(cat /etc/nv_tegra_release)
-
-            # Check for Orin
-            if echo "$jetson_info" | grep -qi "orin"; then
-                echo "jetson-orin"
-                return
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --backend)
+            if [ "$#" -lt 2 ] || [ -z "$2" ]; then
+                echo "--backend requires a non-empty value" >&2
+                exit 2
             fi
-
-            # Check for Thor (might be in future L4T releases)
-            if echo "$jetson_info" | grep -qi "thor"; then
-                echo "jetson-thor"
-                return
+            BACKEND="$2"
+            shift 2
+            ;;
+        --model)
+            if [ "$#" -lt 2 ] || [ -z "$2" ]; then
+                echo "--model requires a non-empty value" >&2
+                exit 2
             fi
-
-            # Generic Jetson (default to Orin for now)
-            echo "jetson-orin"
-            return
-        fi
-
-        # ARM64 but not Jetson (DGX Spark, ARM server)
-        if command -v nvidia-smi &> /dev/null; then
-            echo "x86"  # DGX Spark uses same profile as PC
-            return
-        fi
-
-        # ARM64 without NVIDIA GPU
-        echo "arm64"
-        return
-    fi
-
-    echo "unknown"
-}
-
-PLATFORM=$(detect_platform)
-
-# ==============================================================================
-# Profile Selection
-# ==============================================================================
-select_profile() {
-    local backend="$1"
-    local platform="$2"
-
-    case "$backend" in
-        ollama)
-            case "$platform" in
-                x86)
-                    echo "ollama"
-                    ;;
-                jetson-orin)
-                    echo "ollama-jetson-orin"
-                    ;;
-                jetson-thor)
-                    echo "ollama-jetson-thor"
-                    ;;
-                *)
-                    echo "ollama"  # Default to standard
-                    ;;
-            esac
+            MODEL="$2"
+            shift 2
             ;;
-        vllm)
-            case "$platform" in
-                x86)
-                    echo "vllm"
-                    ;;
-                jetson-orin)
-                    echo "vllm-jetson-orin"
-                    ;;
-                jetson-thor)
-                    echo "vllm-jetson-thor"
-                    ;;
-                *)
-                    echo "vllm"
-                    ;;
-            esac
+        --profile)
+            if [ "$#" -lt 2 ] || [ -z "$2" ]; then
+                echo "--profile requires a non-empty value" >&2
+                exit 2
+            fi
+            PROFILE="$2"
+            shift 2
             ;;
-        nim)
-            case "$platform" in
-                x86)
-                    echo "nim"
-                    ;;
-                jetson-orin)
-                    echo "nim-jetson-orin"
-                    ;;
-                jetson-thor)
-                    echo "nim-jetson-thor"
-                    ;;
-                *)
-                    echo "nim"
-                    ;;
-            esac
+        --foreground)
+            DETACH=false
+            shift
+            ;;
+        --pull-model)
+            PULL_MODEL=true
+            shift
+            ;;
+        --no-pull-model)
+            PULL_MODEL=false
+            shift
+            ;;
+        --non-interactive)
+            NON_INTERACTIVE=true
+            shift
+            ;;
+        --no-stop-existing)
+            STOP_EXISTING=false
+            shift
+            ;;
+        --build)
+            BUILD_IMAGES=true
+            shift
+            ;;
+        -h|--help)
+            show_usage
+            exit 0
             ;;
         *)
-            echo -e "${RED}Error: Unknown backend '$backend'${NC}" >&2
-            echo -e "Available backends: ollama, vllm, nim" >&2
-            exit 1
+            POSITIONAL_ARGS+=( "$1" )
+            shift
             ;;
     esac
-}
+done
 
-PROFILE=$(select_profile "$BACKEND" "$PLATFORM")
-
-# ==============================================================================
-# Compose File (Unified)
-# ==============================================================================
-COMPOSE_FILE="docker-compose.yml"  # Now unified for all backends!
-
-# ==============================================================================
-# Display Banner
-# ==============================================================================
-echo ""
-echo -e "${BLUE}═══════════════════════════════════════════════════════════════${NC}"
-echo -e "${BLUE}  Live VLM WebUI - Docker Compose Launcher${NC}"
-echo -e "${BLUE}═══════════════════════════════════════════════════════════════${NC}"
-echo ""
-echo -e "${GREEN}🔍 Detected Platform:${NC} $PLATFORM"
-echo -e "${GREEN}🐳 Backend:${NC} $BACKEND"
-echo -e "${GREEN}📋 Profile:${NC} $PROFILE"
-echo -e "${GREEN}📄 Compose File:${NC} $COMPOSE_FILE"
-if [ -n "$MODEL" ]; then
-    echo -e "${GREEN}🤖 Model:${NC} $MODEL"
-fi
-echo ""
-
-# ==============================================================================
-# Check for NGC API Key (if using NIM)
-# ==============================================================================
-if [ "$BACKEND" = "nim" ]; then
-    if [ -z "$NGC_API_KEY" ]; then
-        echo -e "${YELLOW}⚠️  Warning: NGC_API_KEY not set!${NC}"
-        echo -e "NIM requires an NGC API key. Get yours at:"
-        echo -e "  ${BLUE}https://org.ngc.nvidia.com/setup/api-key${NC}"
-        echo ""
-        read -p "Set NGC_API_KEY now? (y/N): " -n 1 -r
-        echo
-        if [[ $REPLY =~ ^[Yy]$ ]]; then
-            read -p "Enter NGC API Key: " NGC_API_KEY
-            export NGC_API_KEY
-        else
-            echo -e "${RED}Cannot start NIM without NGC_API_KEY${NC}"
-            exit 1
+if [ "${#POSITIONAL_ARGS[@]}" -gt 0 ]; then
+    if [ "${POSITIONAL_ARGS[0]}" = "ollama" ] || [ "${POSITIONAL_ARGS[0]}" = "nim" ]; then
+        BACKEND="${POSITIONAL_ARGS[0]}"
+        if [ "${#POSITIONAL_ARGS[@]}" -gt 1 ] && [ -z "$MODEL" ]; then
+            MODEL="${POSITIONAL_ARGS[1]}"
         fi
+    else
+        echo "Unknown positional arguments: ${POSITIONAL_ARGS[*]}"
+        show_usage
+        exit 1
     fi
 fi
 
-# ==============================================================================
-# Check for Existing Services
-# ==============================================================================
-check_existing_services() {
-    local compose_file="$1"
+if [ -z "$MODEL" ] && [ "$BACKEND" = "ollama" ]; then
+    MODEL="llama3.2-vision:11b"
+fi
 
-    # Check if any containers from this compose file are running
-    if $DOCKER_COMPOSE_CMD -f "$compose_file" ps -q 2>/dev/null | grep -q .; then
-        echo -e "${YELLOW}⚠️  Existing services detected from $compose_file${NC}"
-        echo ""
-        $DOCKER_COMPOSE_CMD -f "$compose_file" ps
-        echo ""
-        read -p "Stop existing services? (Y/n): " -n 1 -r
-        echo
-        if [[ ! $REPLY =~ ^[Nn]$ ]]; then
-            echo -e "${YELLOW}🛑 Stopping existing services...${NC}"
-            $DOCKER_COMPOSE_CMD -f "$compose_file" down
-            echo -e "${GREEN}✅ Existing services stopped${NC}"
-            echo ""
-        else
-            echo -e "${RED}❌ Cannot start new services while old ones are running${NC}"
-            exit 1
-        fi
-    fi
-}
+if [ "$BACKEND" = "ollama" ]; then
+    # Configure the WebUI deterministically even when the Ollama volume is
+    # empty.  Without these values server auto-detection sees no models during
+    # first boot and incorrectly falls back to the NVIDIA cloud endpoint.
+    export LIVE_VLM_API_BASE="${LIVE_VLM_API_BASE:-http://localhost:11434/v1}"
+    export LIVE_VLM_DEFAULT_MODEL="${LIVE_VLM_DEFAULT_MODEL:-$MODEL}"
+fi
 
-check_existing_services "$COMPOSE_FILE"
+if [ "${LIVE_VLM_PULL_MODEL:-0}" = "1" ]; then
+    PULL_MODEL=true
+fi
 
-# ==============================================================================
-# Start Services
-# ==============================================================================
-echo -e "${BLUE}🚀 Starting services...${NC}"
-echo ""
+PLATFORM="$(detect_platform)"
+if [ -z "$PROFILE" ]; then
+    PROFILE="$(default_compose_profile "$BACKEND" "$PLATFORM")"
+fi
 
-# Build docker compose command
-DOCKER_CMD="$DOCKER_COMPOSE_CMD -f $COMPOSE_FILE --profile $PROFILE up -d"
-
-# Execute
-echo -e "${BLUE}Running: ${NC}$DOCKER_CMD"
-eval $DOCKER_CMD
-
-if [ $? -ne 0 ]; then
-    echo -e "${RED}❌ Failed to start services${NC}"
+if [ -z "$PROFILE" ]; then
+    echo -e "${RED}Unsupported backend/platform combination.${NC}"
     exit 1
 fi
 
+ensure_docker
+COMPOSE_CMD="$(docker_compose_cmd)"
+
+print_header "Live VLM WebUI Compose Launcher"
 echo ""
-echo -e "${GREEN}✅ Services started successfully!${NC}"
+echo -e "${GREEN}Platform:${NC} $PLATFORM"
+echo -e "${GREEN}Backend:${NC}  $BACKEND"
+echo -e "${GREEN}Profile:${NC}  $PROFILE"
+echo -e "${GREEN}Compose:${NC}  $COMPOSE_FILE"
+if [ -n "$MODEL" ]; then
+    echo -e "${GREEN}Model:${NC}    $MODEL"
+fi
+echo ""
 
-# ==============================================================================
-# Pull/Download Model (if specified and backend is Ollama)
-# ==============================================================================
-if [ "$BACKEND" = "ollama" ] && [ -n "$MODEL" ]; then
-    echo ""
-    echo -e "${BLUE}🤖 Checking model: $MODEL${NC}"
+if [ ! -f "$COMPOSE_FILE" ]; then
+    echo -e "${RED}Compose file not found: $COMPOSE_FILE${NC}"
+    exit 1
+fi
 
-    # Wait for Ollama to be ready
-    echo -e "${YELLOW}⏳ Waiting for Ollama to be ready...${NC}"
-    sleep 5
+if [ "$BACKEND" = "nim" ] && [ -z "${NGC_API_KEY:-}" ]; then
+    echo -e "${RED}NGC_API_KEY is required for the NIM backend.${NC}"
+    exit 1
+fi
 
-    # Check if model exists
-    if docker exec ollama ollama list | grep -q "$MODEL"; then
-        echo -e "${GREEN}✅ Model '$MODEL' already available${NC}"
+existing_services="$($COMPOSE_CMD -f "$COMPOSE_FILE" ps --services --filter status=running 2>/dev/null || true)"
+if [ -n "$existing_services" ] && [ "$STOP_EXISTING" = true ]; then
+    if [ "$NON_INTERACTIVE" = true ]; then
+        echo -e "${YELLOW}Stopping existing compose services before restart.${NC}"
+        $COMPOSE_CMD -f "$COMPOSE_FILE" down --remove-orphans
     else
-        echo -e "${YELLOW}📥 Pulling model '$MODEL'...${NC}"
-        echo -e "${BLUE}This may take several minutes depending on model size${NC}"
-        docker exec ollama ollama pull "$MODEL"
-
-        if [ $? -eq 0 ]; then
-            echo -e "${GREEN}✅ Model '$MODEL' downloaded successfully${NC}"
+        echo -e "${YELLOW}Existing compose services are already running:${NC}"
+        echo "$existing_services"
+        read -r -p "Restart them now? [Y/n] " reply
+        if [[ ! "$reply" =~ ^[Nn]$ ]]; then
+            $COMPOSE_CMD -f "$COMPOSE_FILE" down --remove-orphans
         else
-            echo -e "${RED}❌ Failed to download model '$MODEL'${NC}"
-            echo -e "${YELLOW}You can manually pull it later with:${NC}"
-            echo -e "  docker exec ollama ollama pull $MODEL"
+            echo -e "${RED}Refusing to start a second stack on the same ports.${NC}"
+            exit 1
         fi
     fi
 fi
 
-# ==============================================================================
-# Display Access Information
-# ==============================================================================
-echo ""
-echo -e "${BLUE}═══════════════════════════════════════════════════════════════${NC}"
-echo -e "${GREEN}🌐 Access Information${NC}"
-echo -e "${BLUE}═══════════════════════════════════════════════════════════════${NC}"
-echo ""
-
-case "$BACKEND" in
-    ollama)
-        echo -e "${GREEN}Live VLM WebUI:${NC} https://localhost:8090"
-        echo -e "${GREEN}Ollama API:${NC}     http://localhost:11434/v1"
-        ;;
-    vllm)
-        echo -e "${GREEN}Live VLM WebUI:${NC} https://localhost:8090"
-        echo -e "${GREEN}vLLM API:${NC}       http://localhost:8000/v1"
-        ;;
-    nim)
-        echo -e "${GREEN}Live VLM WebUI:${NC} https://localhost:8090"
-        echo -e "${GREEN}NIM API:${NC}        http://localhost:8000/v1"
-        echo ""
-        echo -e "${YELLOW}⚠️  First run: NIM will download ~10-15GB model (5-10 minutes)${NC}"
-        echo -e "Monitor progress: ${BLUE}docker logs -f nim-cosmos-reason1-7b${NC}"
-        ;;
-esac
-
-echo ""
-echo -e "${BLUE}═══════════════════════════════════════════════════════════════${NC}"
-echo ""
-
-# ==============================================================================
-# Useful Commands
-# ==============================================================================
-echo -e "${BLUE}📝 Useful Commands:${NC}"
-echo ""
-echo -e "  View logs:        ${GREEN}docker compose -f $COMPOSE_FILE logs -f${NC}"
-echo -e "  Stop services:    ${GREEN}docker compose -f $COMPOSE_FILE down${NC}"
-echo -e "  List containers:  ${GREEN}docker compose -f $COMPOSE_FILE ps${NC}"
-
-if [ "$BACKEND" = "ollama" ]; then
-    echo -e "  List models:      ${GREEN}docker exec ollama ollama list${NC}"
-    echo -e "  Pull model:       ${GREEN}docker exec ollama ollama pull <model>${NC}"
+if [ -n "$existing_services" ] && [ "$STOP_EXISTING" = false ] && [ "$NON_INTERACTIVE" = true ]; then
+    echo -e "${RED}Compose services are already running and --no-stop-existing was set.${NC}"
+    exit 1
 fi
 
+export COMPOSE_PROFILES="$PROFILE"
+export PYTHONUNBUFFERED=1
+
+if [ "$PLATFORM" = "jetson-orin" ] || [ "$PLATFORM" = "jetson-thor" ]; then
+    export LIVE_VLM_PROCESS_EVERY="${LIVE_VLM_PROCESS_EVERY:-45}"
+    export NANOOWL_DEVICE="${NANOOWL_DEVICE:-cuda}"
+    export OPENBLAS_NUM_THREADS="${OPENBLAS_NUM_THREADS:-1}"
+    export OMP_NUM_THREADS="${OMP_NUM_THREADS:-1}"
+fi
+
+UP_ARGS=( -f "$COMPOSE_FILE" --profile "$PROFILE" up )
+if [ "$DETACH" = true ]; then
+    UP_ARGS+=( -d )
+fi
+if [ "$BUILD_IMAGES" = true ]; then
+    UP_ARGS+=( --build )
+fi
+
+echo -e "${BLUE}Starting services...${NC}"
+if [ "$COMPOSE_CMD" = "docker compose" ]; then
+    docker compose "${UP_ARGS[@]}"
+else
+    docker-compose "${UP_ARGS[@]}"
+fi
+
+if [ "$BACKEND" = "ollama" ] && [ "$PULL_MODEL" = true ] && [ -n "$MODEL" ]; then
+    echo ""
+    echo -e "${BLUE}Waiting for Ollama to become ready...${NC}"
+    for attempt in $(seq 1 30); do
+        if docker exec ollama ollama list >/dev/null 2>&1; then
+            break
+        fi
+        sleep 2
+    done
+
+    if docker exec ollama ollama list 2>/dev/null | awk 'NR > 1 {print $1}' | grep -Fxq "$MODEL"; then
+        echo -e "${GREEN}Model already present: $MODEL${NC}"
+    else
+        echo -e "${BLUE}Pulling Ollama model: $MODEL${NC}"
+        docker exec ollama ollama pull "$MODEL"
+    fi
+fi
+
+if [ "$DETACH" = true ]; then
+    echo ""
+    echo -e "${BLUE}Waiting for the WebUI health check...${NC}"
+    webui_ready=false
+    for attempt in $(seq 1 45); do
+        health="$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' live-vlm-webui 2>/dev/null || true)"
+        case "$health" in
+            healthy|running)
+                webui_ready=true
+                break
+                ;;
+            unhealthy|exited|dead)
+                echo -e "${RED}WebUI container entered state: $health${NC}"
+                docker logs --tail 80 live-vlm-webui >&2 || true
+                exit 1
+                ;;
+        esac
+        sleep 2
+    done
+    if [ "$webui_ready" != true ]; then
+        echo -e "${RED}Timed out waiting for the WebUI container to become ready.${NC}"
+        docker logs --tail 80 live-vlm-webui >&2 || true
+        exit 1
+    fi
+fi
+
+HOST_ADDR="$(local_access_host)"
 echo ""
-echo -e "${GREEN}🎉 Ready to use! Open https://localhost:8090 in your browser${NC}"
+print_header "Access Information"
+echo ""
+echo -e "${GREEN}Web UI:${NC} https://${HOST_ADDR}:8090"
+case "$BACKEND" in
+    ollama)
+        echo -e "${GREEN}Ollama API:${NC} http://${HOST_ADDR}:11434/v1"
+        if [ "$PULL_MODEL" = false ] && [ -n "$MODEL" ]; then
+            echo -e "${YELLOW}Model pull skipped:${NC} docker exec ollama ollama pull $MODEL"
+        fi
+        ;;
+    nim)
+        echo -e "${GREEN}NIM API:${NC} http://${HOST_ADDR}:8000/v1"
+        ;;
+esac
+echo ""
+echo -e "${BLUE}Stop:${NC} ./scripts/stop_docker_compose.sh"
+echo -e "${BLUE}Logs:${NC} $COMPOSE_CMD -f \"$COMPOSE_FILE\" logs -f"
 echo ""

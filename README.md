@@ -55,8 +55,8 @@ live-vlm-webui
 - ✅ Linux PC (x86_64)
 - ✅ DGX Spark (ARM64)
 - ✅ macOS (Apple Silicon)
-- ✅ Windows (via WSL2) - need to run Ollma on WSL. See [Windows WSL Setup Guide](./docs/usage/windows-wsl.md)
-- ⚠️ **Jetson (Orin, Thor)** - pip works but Docker is simpler. See [Jetson Quick Start](#-jetson-quick-start) below
+- ✅ Windows (via WSL2) - use `./scripts/start_wsl.sh` from WSL or `./scripts/start_windows.ps1` from PowerShell
+- ✅ Jetson (Orin, Thor) - use `./scripts/start_jetson.sh`
 
 ---
 
@@ -66,7 +66,7 @@ live-vlm-webui
 > **Requires JetPack 6.x** (Python 3.10+) or **JetPack 7.0** (Python 3.12).
 > JetPack 5.x has Python 3.8 which is not supported - use Docker or upgrade.
 
-### Option 1: Docker (Recommended - Works Out of the Box)
+### Option 1: Jetson Launcher (Recommended - Works Out of the Box)
 
 **For all Jetson platforms (Orin, Thor):**
 
@@ -75,14 +75,14 @@ live-vlm-webui
 git clone https://github.com/nvidia-ai-iot/live-vlm-webui.git
 cd live-vlm-webui
 
-# Run the auto-detection script (interactive mode)
-./scripts/start_container.sh
-
-# Or specify a version
-./scripts/start_container.sh --version 0.2.0
+# Start the supported Jetson stack
+./scripts/start_jetson.sh
 ```
 
-The script auto-detects your platform, lets you choose a version, and starts the appropriate Docker container.
+The launcher validates Docker/NVIDIA runtime assumptions, builds the WebUI image from the
+checked-out source, starts the matching Jetson compose profile, pulls the configured Ollama
+model, and waits for the WebUI health check. Override the model with
+`./scripts/start_jetson.sh --model <name>`.
 
 **Access the WebUI:** Open **`https://localhost:8090`** in your browser
 
@@ -269,8 +269,8 @@ source .venv/bin/activate
 pip install --upgrade pip setuptools wheel
 pip install -e .
 
-# 4. Start the server (SSL certs auto-generate)
-./scripts/start_server.sh
+# 4. Start the WSL/local server (SSL certs auto-generate)
+./scripts/start_wsl.sh
 ```
 
 **Access the WebUI:** Open **`https://localhost:8090`**
@@ -357,7 +357,7 @@ python -m vllm.entrypoints.openai.api_server \
 
 ## 🔧 Alternative Installation Methods
 
-### Docker (Recommended for Production & Jetson)
+### Docker Compose (Recommended for Jetson Production)
 
 **For PC, DGX Spark, and Jetson users who want containerized deployment:**
 
@@ -366,14 +366,8 @@ python -m vllm.entrypoints.openai.api_server \
 git clone https://github.com/nvidia-ai-iot/live-vlm-webui.git
 cd live-vlm-webui
 
-# 2. Run the auto-detection script
-./scripts/start_container.sh
-
-# Or specify a version
-./scripts/start_container.sh --version 0.2.0
-
-# List available versions
-./scripts/start_container.sh --list-versions
+# 2. Start the supported compose stack
+./scripts/start_docker_compose.sh --backend ollama
 ```
 
 **Benefits:**
@@ -381,15 +375,6 @@ cd live-vlm-webui
 - ✅ Isolated environment
 - ✅ Works across all platforms (x86_64, ARM64, Jetson)
 - ✅ Production-ready
-- ✅ Version pinning support
-
-**Version Selection:**
-
-The script supports multiple ways to select a version:
-- **Interactive mode**: Shows available versions and lets you pick (default)
-- **Specific version**: `--version 0.2.0` to pin to a specific release
-- **Latest version**: `--version latest` or `--skip-version-pick` for newest
-- **List versions**: `--list-versions` to see all available tags
 
 **Available pre-built images:**
 
@@ -409,9 +394,27 @@ The script supports multiple ways to select a version:
 
 ---
 
-### Docker Compose (Complete Stack with VLM Backend)
+### Supported Startup Paths
 
-**For PC and DGX Spark users who want VLM + WebUI in one command:**
+**WSL / Windows:**
+```bash
+./scripts/start_wsl.sh
+./scripts/stop_wsl.sh
+```
+
+**Windows PowerShell wrapper:**
+```powershell
+./scripts/start_windows.ps1
+./scripts/stop_windows.ps1
+```
+
+**Jetson:**
+```bash
+./scripts/start_jetson.sh
+./scripts/stop_jetson.sh
+```
+
+**Generic compose launcher:**
 
 > [!TIP]
 > `start_docker_compose.sh` automatically detects your platform, checks Docker installation, and selects the correct profile. Just run it!
@@ -420,7 +423,7 @@ The script supports multiple ways to select a version:
 
 **Using the launcher script (recommended):**
 ```bash
-./scripts/start_docker_compose.sh ollama
+./scripts/start_docker_compose.sh --backend ollama
 
 # Pull a vision model after startup
 docker exec ollama ollama pull llama3.2-vision:11b
@@ -452,7 +455,7 @@ Includes:
 # Get NGC API Key from https://org.ngc.nvidia.com/setup/api-key
 export NGC_API_KEY=<your-key>
 
-./scripts/start_docker_compose.sh nim
+./scripts/start_docker_compose.sh --backend nim
 ```
 
 **Or manually with docker compose:**
@@ -599,11 +602,14 @@ live-vlm-webui/
 │           └── index.html    # Frontend web UI
 │
 ├── scripts/                  # Bash scripts & utilities
-│   ├── start_server.sh      # Quick start script with SSL
-│   ├── stop_server.sh       # Stop the server
-│   ├── start_container.sh   # Auto-detection Docker launcher
-│   ├── stop_container.sh    # Stop Docker container
-│   ├── start_docker_compose.sh # Docker Compose launcher
+│   ├── start_wsl.sh         # Supported WSL/local entrypoint
+│   ├── stop_wsl.sh          # Stop the WSL/local server
+│   ├── start_jetson.sh      # Supported Jetson entrypoint
+│   ├── stop_jetson.sh       # Stop the Jetson compose stack
+│   ├── start_docker_compose.sh # Shared compose launcher
+│   ├── stop_docker_compose.sh  # Shared compose stop script
+│   ├── start_windows.ps1    # Windows -> WSL launcher wrapper
+│   ├── stop_windows.ps1     # Windows -> WSL stop wrapper
 │   ├── generate_cert.sh     # SSL certificate generation
 │   ├── build_multiarch.sh   # Multi-arch Docker build
 │   └── build_multiarch_cuda.sh

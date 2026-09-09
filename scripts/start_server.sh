@@ -198,7 +198,7 @@ elif command -v timeout >/dev/null 2>&1; then
     NANOOWL_CHECK="$(timeout "${NANOOWL_CHECK_TIMEOUT_SECONDS:-20}s" \
         "$PYTHON" "$SCRIPT_DIR/check_nanoowl.py" 2>&1 || true)"
     if [ -z "$NANOOWL_CHECK" ]; then
-        NANOOWL_CHECK="MISSING availability check timed out"
+        NANOOWL_CHECK="DEFERRED cold-start check timed out"
     fi
 else
     NANOOWL_CHECK="$("$PYTHON" "$SCRIPT_DIR/check_nanoowl.py" 2>&1 || true)"
@@ -212,6 +212,10 @@ case "$NANOOWL_CHECK" in
     echo "⚠️  NanoOWL loaded but no CUDA GPU detected — detection will be slow."
     echo "    Make sure you are using the venv with a CUDA build of torch."
     export NANOOWL_DEVICE="cpu"
+    ;;
+  "DEFERRED "*)
+    echo "⚠️  NanoOWL GPU check timed out; availability will be retried when boxes are enabled."
+    echo "    The first detection can take longer while CUDA and model weights warm up."
     ;;
   *)
     echo "⚠️  NanoOWL not available (object detection disabled): ${NANOOWL_CHECK#MISSING }"

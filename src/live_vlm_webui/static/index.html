@@ -3944,6 +3944,7 @@ After commands, explain: obstacles detected, clearance margins, goal inference, 
 
                 // Build query params
                 const params = new URLSearchParams();
+                params.append('session_id', sessionId);
                 if (currentApiBase) {
                     params.append('api_base', currentApiBase);
                 }

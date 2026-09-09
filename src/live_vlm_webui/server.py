@@ -285,6 +285,8 @@ async def models(request):
         # Check if custom API base and key are provided in query params
         api_base = request.rel_url.query.get("api_base")
         api_key = request.rel_url.query.get("api_key")
+        session_id = request.rel_url.query.get("session_id", "default")
+        current_svc = get_or_create_session(session_id)["vlm_service"]
 
         if api_base:
             # Query models from the provided API endpoint
@@ -293,7 +295,11 @@ async def models(request):
             temp_client = AsyncOpenAI(base_url=api_base, api_key=api_key if api_key else "EMPTY")
             models_response = await temp_client.models.list()
             models_list = [
-                {"id": model.id, "name": model.id, "current": False}
+                {
+                    "id": model.id,
+                    "name": model.id,
+                    "current": model.id == current_svc.model,
+                }
                 for model in models_response.data
             ]
             return web.Response(
@@ -301,10 +307,9 @@ async def models(request):
             )
         else:
             # Use default session's VLM service (backwards compat when no api_base in query)
-            default_svc = get_or_create_session("default")["vlm_service"]
-            models_response = await default_svc.client.models.list()
+            models_response = await current_svc.client.models.list()
             models_list = [
-                {"id": model.id, "name": model.id, "current": model.id == default_svc.model}
+                {"id": model.id, "name": model.id, "current": model.id == current_svc.model}
                 for model in models_response.data
             ]
             return web.Response(
